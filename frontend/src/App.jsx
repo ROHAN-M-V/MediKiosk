@@ -43,8 +43,18 @@ export default function App() {
   useEffect(() => {
     if (isSupabaseConfigured && supabase) {
       supabase.auth.getSession().then(({ data: { session: supaSession } }) => {
-        if (supaSession?.user && supaSession.user.user_metadata?.role === 'doctor') {
-          setDoctorUser(supaSession.user)
+        if (supaSession?.user) {
+          const user = supaSession.user
+          const docName = user.user_metadata?.name || user.user_metadata?.full_name || (user.email ? `Dr. ${user.email.split('@')[0]}` : 'Dr. Attending')
+          const doctorObj = {
+            id: user.id,
+            email: user.email,
+            name: docName,
+            role: 'doctor',
+            specialty: user.user_metadata?.specialty || 'Attending Physician'
+          }
+          localStorage.setItem('medikiosk_doctor_user', JSON.stringify(doctorObj))
+          setDoctorUser(doctorObj)
           setAppMode('doctor_console')
         } else {
           checkLocalDoctorSession()
@@ -52,12 +62,23 @@ export default function App() {
         setAuthLoading(false)
       })
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, supaSession) => {
-        if (supaSession?.user && supaSession.user.user_metadata?.role === 'doctor') {
-          setDoctorUser(supaSession.user)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, supaSession) => {
+        if (supaSession?.user) {
+          const user = supaSession.user
+          const docName = user.user_metadata?.name || user.user_metadata?.full_name || (user.email ? `Dr. ${user.email.split('@')[0]}` : 'Dr. Attending')
+          const doctorObj = {
+            id: user.id,
+            email: user.email,
+            name: docName,
+            role: 'doctor',
+            specialty: user.user_metadata?.specialty || 'Attending Physician'
+          }
+          localStorage.setItem('medikiosk_doctor_user', JSON.stringify(doctorObj))
+          setDoctorUser(doctorObj)
           setAppMode('doctor_console')
-        } else {
-          checkLocalDoctorSession()
+        } else if (event === 'SIGNED_OUT') {
+          setDoctorUser(null)
+          setAppMode('entry')
         }
         setAuthLoading(false)
       })
