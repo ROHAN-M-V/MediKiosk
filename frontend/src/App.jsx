@@ -251,8 +251,8 @@ export default function App() {
     }
   }
 
-  async function handleSendMessage(text) {
-    if (!session) return
+  async function handleSendMessage(text, langOverride) {
+    if (!session) return null
 
     const userMsg = {
       role: 'user',
@@ -269,7 +269,7 @@ export default function App() {
         body: JSON.stringify({
           session_id: session.id,
           message: text,
-          language
+          language: langOverride || language
         })
       })
       const data = await res.json()
@@ -283,8 +283,10 @@ export default function App() {
       setSocratesHpi(data.socrates_hpi || {})
       setRedFlag(data.red_flag || { is_critical: false })
       setSuggestedChips(data.suggested_chips || [])
+      return data
     } catch (err) {
       console.error('Failed to send message:', err)
+      return null
     } finally {
       setIsLoading(false)
     }

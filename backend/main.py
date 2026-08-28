@@ -270,6 +270,7 @@ async def chat_intake(data: IntakeChatRequest):
 
     return {
         "reply": reply_text,
+        "detected_language": ai_result.get("detected_language", "en"),
         "suggested_chips": ai_result.get("suggested_chips", []),
         "socrates_hpi": updated_socrates,
         "red_flag": red_flag,

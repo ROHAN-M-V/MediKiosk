@@ -61,7 +61,6 @@ html, body, #root {
   background: #545460;
 }
 
-/* Input font sizing to prevent mobile browser zooming */
 input, select, textarea, button {
   font-family: inherit;
   font-size: 15px;
@@ -1155,6 +1154,59 @@ button {
   overflow: hidden;
 }
 
+/* Chat Header Banner with Live Voice Switcher */
+.chat-top-banner-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--accent-border);
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mode-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.active-mode-pill {
+  padding: 5px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-border);
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.btn-launch-gemini-live {
+  padding: 5px 12px;
+  background: linear-gradient(135deg, #1e1e28 0%, #2a2a38 100%);
+  border: 1px solid #545460;
+  border-radius: 9999px;
+  color: #ffffff;
+  font-size: 12px !important;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.06);
+}
+
+.btn-launch-gemini-live:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.lang-support-badge {
+  font-size: 11px;
+  color: var(--accent-muted);
+}
+
 .red-flag-card {
   display: flex;
   align-items: center;
@@ -1446,6 +1498,391 @@ button {
 .badge-meta {
   font-size: 11px;
   color: var(--accent-muted);
+}
+
+/* ═════════════════════════════════════════════════════════════
+   🎙️ GEMINI LIVE-STYLE VOICE MODE STYLES & ANIMATIONS
+   ═════════════════════════════════════════════════════════════ */
+
+.live-voice-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+  animation: fadeInModal 0.25s ease-out;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.live-voice-card {
+  width: 100%;
+  max-width: 680px;
+  background: #0d0d14;
+  border: 1px solid #2e2e3c;
+  border-radius: var(--radius-xl);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.95);
+}
+
+.live-voice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.live-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.live-pulse-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: #181824;
+  border: 1px solid #3d3d52;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #ffffff;
+}
+
+.live-dot-glow {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00d2ff;
+  box-shadow: 0 0 10px #00d2ff;
+  animation: pulseDot 1s infinite alternate;
+}
+
+.lang-auto-badge {
+  padding: 4px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent-border);
+  border-radius: 9999px;
+  font-size: 11px;
+  color: var(--accent-muted);
+}
+
+.btn-close-live-voice {
+  padding: 6px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-border);
+  color: #ffffff;
+  border-radius: var(--radius-sm);
+  font-size: 12px !important;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-close-live-voice:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
+.live-red-flag-bar {
+  background: var(--alert-red-bg);
+  border: 1px solid var(--alert-red-border);
+  color: var(--alert-red);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+/* Gemini Live Glowing Orb Visualizer */
+.live-voice-visualizer-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px 14px;
+}
+
+.gemini-live-orb {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gemini-live-orb:hover {
+  transform: scale(1.04);
+}
+
+.orb-inner-core {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #20202e 70%, #000000 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 0 35px rgba(255, 255, 255, 0.25);
+}
+
+.orb-center-icon {
+  font-size: 32px;
+  z-index: 10;
+}
+
+.orb-wave-ring {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+}
+
+/* Orb States: Listening */
+.gemini-live-orb.listening .orb-inner-core {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #0070f3 60%, #001f3f 100%);
+  box-shadow: 0 0 45px rgba(0, 112, 243, 0.6);
+  animation: orbBreathe 2s infinite ease-in-out;
+}
+
+.gemini-live-orb.listening .r1 {
+  animation: waveExpand 2s infinite ease-out;
+  border-color: rgba(0, 112, 243, 0.5);
+}
+
+.gemini-live-orb.listening .r2 {
+  animation: waveExpand 2s infinite ease-out 0.6s;
+  border-color: rgba(0, 112, 243, 0.3);
+}
+
+/* Orb States: Speaking (AI Spoken Audio) */
+.gemini-live-orb.speaking .orb-inner-core {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #00d2ff 40%, #7928ca 100%);
+  box-shadow: 0 0 60px rgba(0, 210, 255, 0.8), 0 0 90px rgba(121, 40, 202, 0.5);
+  animation: orbSpeakPulse 0.8s infinite alternate ease-in-out;
+}
+
+.gemini-live-orb.speaking .r1 {
+  animation: waveExpand 1.2s infinite ease-out;
+  border-color: rgba(0, 210, 255, 0.8);
+}
+
+.gemini-live-orb.speaking .r2 {
+  animation: waveExpand 1.2s infinite ease-out 0.4s;
+  border-color: rgba(121, 40, 202, 0.6);
+}
+
+.gemini-live-orb.speaking .r3 {
+  animation: waveExpand 1.2s infinite ease-out 0.8s;
+  border-color: rgba(0, 210, 255, 0.4);
+}
+
+/* Orb States: Processing */
+.gemini-live-orb.processing .orb-inner-core {
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #ff0080 50%, #7928ca 100%);
+  box-shadow: 0 0 50px rgba(255, 0, 128, 0.7);
+  animation: orbSpin 1.2s infinite linear;
+}
+
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes orbSpeakPulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.16); }
+}
+
+@keyframes orbSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes waveExpand {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.live-status-container {
+  margin-top: 18px;
+  text-align: center;
+}
+
+.live-status-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.btn-interrupt-pill {
+  padding: 6px 14px;
+  background: var(--alert-red-bg);
+  border: 1px solid var(--alert-red);
+  color: var(--alert-red);
+  border-radius: 9999px;
+  font-size: 11.5px !important;
+  font-weight: 700;
+  cursor: pointer;
+  animation: pulseAlert 1s infinite;
+  margin-top: 4px;
+}
+
+.btn-interrupt-pill:hover {
+  background: var(--alert-red);
+  color: #000000;
+}
+
+/* Live Caption & Turns Box */
+.live-transcript-box {
+  background: #08080c;
+  border: 1px solid #232330;
+  border-radius: var(--radius-md);
+  padding: 16px;
+  min-height: 110px;
+  max-height: 170px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.live-caption-stream {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  color: #ffffff;
+  line-height: 1.45;
+}
+
+.caption-tag {
+  font-weight: 700;
+  color: #00d2ff;
+}
+
+.live-turns-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.live-turn-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.live-turn-row.user .turn-label {
+  color: #00d2ff;
+  font-weight: 700;
+}
+
+.live-turn-row.assistant .turn-label {
+  color: #7928ca;
+  font-weight: 700;
+}
+
+.live-placeholder-hint {
+  text-align: center;
+  color: var(--accent-muted);
+}
+
+.live-placeholder-hint p {
+  font-size: 13px;
+  color: #e4e4e7;
+  margin-bottom: 2px;
+}
+
+.live-placeholder-hint span {
+  font-size: 11.5px;
+}
+
+.live-socrates-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #12121c;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soc-mini-label {
+  color: var(--accent-muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.soc-mini-val {
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-voice-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.btn-return-chat {
+  padding: 9px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent-border);
+  color: #ffffff;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-mute-toggle {
+  padding: 9px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-muted);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-mute-toggle.active {
+  color: var(--status-green);
+  border-color: var(--status-green);
 }
 
 /* ─── Document Scanner Step ───────────────────────────────── */
@@ -2333,7 +2770,7 @@ button {
   color: var(--accent-muted);
 }
 
-/* ─── FHIR Modal ──────────────────────────────────────────── */
+/* ─── FHIR Modal ──────────────────────────────────── */
 
 .fhir-modal {
   width: 740px;
@@ -2481,6 +2918,21 @@ button {
 
   .mobile-packet-back-bar {
     display: block;
+  }
+
+  .live-voice-card {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+
+  .gemini-live-orb {
+    width: 120px;
+    height: 120px;
+  }
+
+  .orb-inner-core {
+    width: 85px;
+    height: 85px;
   }
 }
 

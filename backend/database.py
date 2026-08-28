@@ -131,8 +131,7 @@ async def init_db():
         except Exception:
             pass
 
-        await db.commit()
-    print("✅ MediKiosk Database initialized with Token Authentication & Security Logging")
+    print("[DB] MediKiosk Database initialized with Token Authentication & Security Logging")
 
 
 # ─── Patient Token CRUD & Verification ────────────────────────

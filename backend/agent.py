@@ -1,6 +1,6 @@
 """
 MediKiosk AI Engine — Multi-Modal Clinical Intake, OCR Extraction,
-SOCRATES Adaptive Triage, and ABDM FHIR Bundle Generator.
+SOCRATES Adaptive Triage, Dual-Language (English + Hindi), and ABDM FHIR Generator.
 High-Speed Async Engine Powered by Google GenAI SDK (gemini-3.1-flash-lite / gemini-3.5-flash-lite).
 """
 
@@ -24,15 +24,22 @@ FAST_INTAKE_MODEL = "gemini-3.1-flash-lite"
 FAST_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 
 
-# ─── 1. Adaptive Clinical Intake Interview (SOCRATES + Red Flag) ───
+# ─── 1. Adaptive Clinical Intake Interview (SOCRATES + Multilingual + Red Flag) ───
 
 INTAKE_SYSTEM_PROMPT = """You are MediKiosk AI, an ultra-fast, empathetic clinical intake assistant in a hospital outpatient kiosk.
 
 YOUR GOAL:
 Collect patient presenting symptoms concisely using the clinical SOCRATES framework before doctor review.
 
-RULES:
-1. Ask 1-2 focused, compassionate questions at a time in simple language.
+MULTILINGUAL LANGUAGE RULES:
+- ONLY SUPPORT TWO LANGUAGES: English and Hindi.
+- Automatically detect whether the patient is communicating in English or Hindi (including Devanagari or Hinglish/romanized Hindi).
+- If the patient communicates in Hindi, reply in natural, compassionate, simple conversational Hindi (Devanagari script) and provide Hindi suggested quick chips.
+- If the patient communicates in English, reply in natural, compassionate English and provide English suggested quick chips.
+- Always include `"detected_language": "hi"` or `"en"` in your JSON response.
+
+CLINICAL RULES:
+1. Ask 1-2 focused, compassionate questions at a time in simple, jargon-free language.
 2. Track SOCRATES (Site, Onset, Character, Radiation, Associations, Time course, Exacerbating/Relieving, Severity 1-10).
 3. RED-FLAG EMERGENCY DETECTION:
    Immediately flag critical acute risks (Crushing chest pain / radiating to arm/jaw, acute stroke / slurred speech / facial droop, severe respiratory failure / stridor, acute sepsis).
@@ -41,10 +48,11 @@ OUTPUT FORMAT:
 Respond with ONLY a valid JSON object matching this schema:
 ```json
 {
-  "reply_text": "Empathetic reply + next 1-2 focused questions",
-  "suggested_chips": ["Chest", "Left Arm", "Dull ache", "Started today"],
+  "reply_text": "Empathetic reply in the patient's language + next 1-2 focused questions",
+  "detected_language": "en" | "hi",
+  "suggested_chips": ["Chip 1", "Chip 2", "Chip 3", "Chip 4"],
   "socrates_extracted": {
-    "chief_complaint": "Extracted main issue",
+    "chief_complaint": "Extracted main issue (English or clear Hindi)",
     "site": "Location or null",
     "onset": "Duration or null",
     "character": "Quality or null",
@@ -72,10 +80,10 @@ async def run_intake_conversation(
     current_socrates: Optional[Dict[str, Any]] = None,
     language: str = "en"
 ) -> Dict[str, Any]:
-    """High-speed async conversational interview using Gemini Flash-Lite."""
+    """High-speed async conversational interview supporting English and Hindi."""
     history_str = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history_messages[-4:]])
 
-    prompt = f"""Language: {language}
+    prompt = f"""Language preference hint: {language} (auto-detect based on patient message)
 Patient: {patient_info.get('name', 'Patient')}, {patient_info.get('age', 'Unknown')}yo {patient_info.get('gender', '')}
 Current SOCRATES: {json.dumps(current_socrates or {})}
 Recent transcript:
@@ -108,13 +116,30 @@ Output JSON:"""
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
 
-            return json.loads(content)
+            parsed = json.loads(content)
+            if "detected_language" not in parsed:
+                # Basic fallback detection
+                is_hindi = any('\u0900' <= char <= '\u097F' for char in user_message)
+                parsed["detected_language"] = "hi" if is_hindi else "en"
+            return parsed
         except Exception as e:
             continue
 
-    # Instant Fallback
+    # Instant Fallback if offline
+    is_hindi = any('\u0900' <= char <= '\u097F' for char in user_message)
+    if is_hindi or language == "hi":
+        return {
+            "reply_text": "यह बताने के लिए धन्यवाद। क्या आप बता सकते हैं कि यह तकलीफ कब से शुरू हुई और 1 से 10 के पैमाने पर दर्द कितना तेज है?",
+            "detected_language": "hi",
+            "suggested_chips": ["आज से शुरू हुआ", "2-3 दिन से", "हल्का दर्द (1-4)", "तेज दर्द (7-10)"],
+            "socrates_extracted": current_socrates or {"chief_complaint": user_message},
+            "red_flag": {"is_critical": False, "severity": "NORMAL", "reason": None},
+            "is_intake_complete": False
+        }
+
     return {
         "reply_text": "Thank you for sharing that. Could you tell me when these symptoms first started and how severe the discomfort feels from 1 to 10?",
+        "detected_language": "en",
         "suggested_chips": ["Started today", "Started 2-3 days ago", "Mild (1-4)", "Severe (7-10)"],
         "socrates_extracted": current_socrates or {"chief_complaint": user_message},
         "red_flag": {"is_critical": False, "severity": "NORMAL", "reason": None},
@@ -218,6 +243,7 @@ async def analyze_medical_document(
 
 PHYSICIAN_SUMMARY_PROMPT = """You are a Senior Hospital Clinical Documentation Specialist.
 Generate a structured, verifiable **Physician Intake Summary** in Markdown format based on the patient's symptoms, SOCRATES history, and scanned documents.
+Note: If patient communicated in Hindi, provide the clinical summary in standard English clinical notation for attending physician review, noting any patient-reported Hindi terms.
 
 STRUCTURE REQUIRED:
 # Clinical Intake Summary

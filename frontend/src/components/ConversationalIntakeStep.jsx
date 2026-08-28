@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import LiveVoiceOverlay from './LiveVoiceOverlay'
 
 export default function ConversationalIntakeStep({
   session,
@@ -15,6 +16,7 @@ export default function ConversationalIntakeStep({
   const [inputText, setInputText] = useState('')
   const [isListening, setIsListening] = useState(false)
   const [showMobileSidebar, setShowMobileSidebar] = useState(false)
+  const [isLiveVoiceOpen, setIsLiveVoiceOpen] = useState(false)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export default function ConversationalIntakeStep({
     }
   }
 
-  // Web Speech API for voice input
+  // Dual-Language (English & Hindi) Speech-to-Text
   function toggleVoiceInput() {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       alert('Speech Recognition is not supported in this browser. Please type your message.')
@@ -44,7 +46,7 @@ export default function ConversationalIntakeStep({
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     const recognition = new SpeechRecognition()
-    recognition.lang = session?.language === 'hi' ? 'hi-IN' : 'en-US'
+    recognition.lang = session?.language === 'hi' ? 'hi-IN' : 'en-IN'
     recognition.interimResults = false
 
     if (!isListening) {
@@ -77,6 +79,22 @@ export default function ConversationalIntakeStep({
 
       {/* Main Chat Panel */}
       <div className="intake-chat-panel">
+        {/* Top Chat Bar: Live Voice Launcher & Language Indicator */}
+        <div className="chat-top-banner-bar">
+          <div className="mode-toggle-group">
+            <span className="active-mode-pill">💬 Standard Chat</span>
+            <button
+              type="button"
+              className="btn-launch-gemini-live"
+              onClick={() => setIsLiveVoiceOpen(true)}
+              title="Launch hands-free real-time voice mode"
+            >
+              🎙️ Switch to Gemini Live Voice
+            </button>
+          </div>
+          <span className="lang-support-badge">🌐 English & 🇮🇳 हिंदी Supported</span>
+        </div>
+
         {/* Red Flag Warning Banner */}
         {redFlag?.is_critical && (
           <div className="red-flag-card">
@@ -139,22 +157,22 @@ export default function ConversationalIntakeStep({
           </div>
         )}
 
-        {/* Input Bar with Voice & Send */}
+        {/* Input Bar with Voice, Live Voice & Send */}
         <div className="intake-input-bar">
           <button
             type="button"
             className={`btn-voice-record ${isListening ? 'listening' : ''}`}
             onClick={toggleVoiceInput}
-            title="Speak symptoms (Voice Input)"
+            title="Speak symptoms (Voice-to-Text in English/Hindi)"
           >
-            {isListening ? '🎙️ Listening...' : '🎤 Voice'}
+            {isListening ? '🎙️ Listening...' : '🎤 Speak'}
           </button>
 
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe your symptoms (or use voice)..."
+            placeholder="Type in English or हिंदी (or speak)..."
             rows={1}
             disabled={isLoading}
           />
@@ -172,7 +190,7 @@ export default function ConversationalIntakeStep({
         {/* Bottom Stage Action */}
         <div className="intake-footer-action">
           <p className="kiosk-hint">
-            Answered the main questions? You can now attach prescriptions or lab reports.
+            Answered the main questions? You can attach previous prescriptions or lab reports next.
           </p>
           <button type="button" className="btn-kiosk-primary" onClick={onProceedToDocs}>
             Proceed to Document Upload (Step 3) →
@@ -184,7 +202,7 @@ export default function ConversationalIntakeStep({
       <aside className={`intake-socrates-sidebar ${showMobileSidebar ? 'mobile-open' : ''}`}>
         <div className="socrates-header">
           <h3>🩺 SOCRATES Clinical State</h3>
-          <span className="socrates-sub">Live AI Extraction</span>
+          <span className="socrates-sub">Live AI Extraction (Dual Language)</span>
         </div>
 
         <div className="socrates-card-list">
@@ -242,9 +260,21 @@ export default function ConversationalIntakeStep({
 
         <div className="patient-quick-badge">
           <div className="badge-name">{patient?.name}</div>
-          <div className="badge-meta">{patient?.age} yrs • {patient?.gender} • Queue: {session?.queue_number}</div>
+          <div className="badge-meta">{patient?.age} yrs • {patient?.gender} • Token: {session?.patient_token || 'N/A'}</div>
         </div>
       </aside>
+
+      {/* ─── Gemini Live-Style Voice Mode Overlay ─── */}
+      <LiveVoiceOverlay
+        isOpen={isLiveVoiceOpen}
+        onClose={() => setIsLiveVoiceOpen(false)}
+        session={session}
+        patient={patient}
+        socratesHpi={socratesHpi}
+        redFlag={redFlag}
+        onSendVoiceMessage={onSendMessage}
+        isLoading={isLoading}
+      />
     </div>
   )
 }
