@@ -56,6 +56,9 @@ export default function App() {
           localStorage.setItem('medikiosk_doctor_user', JSON.stringify(doctorObj))
           setDoctorUser(doctorObj)
           setAppMode('doctor_console')
+          if (window.location.hash.includes('access_token')) {
+            window.history.replaceState(null, '', window.location.pathname)
+          }
         } else {
           checkLocalDoctorSession()
         }
