@@ -36,7 +36,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(docSaved)
         if (parsed?.role === 'doctor') return 'doctor_console'
-      } catch (e) {}
+      } catch (e) { }
     }
     if (savedPatient && savedPatient.appMode) {
       return savedPatient.appMode
