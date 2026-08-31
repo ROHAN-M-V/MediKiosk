@@ -12,26 +12,124 @@ import { supabase, isSupabaseConfigured } from './supabaseClient'
 
 import { API_URL } from './apiConfig'
 
+const PATIENT_STORAGE_KEY = 'medikiosk_patient_session'
+
+function loadSavedPatientState() {
+  try {
+    const raw = localStorage.getItem(PATIENT_STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch (e) {
+    console.error('Failed to load patient session from storage:', e)
+    return null
+  }
+}
+
 export default function App() {
+  const savedPatient = loadSavedPatientState()
+
   // ─── Top-Level Navigation State ─────────────────────────────
   // 'entry' | 'patient_token' | 'patient_intake' | 'doctor_console'
-  const [appMode, setAppMode] = useState('entry')
+  const [appMode, setAppMode] = useState(() => {
+    const docSaved = localStorage.getItem('medikiosk_doctor_user')
+    if (docSaved) {
+      try {
+        const parsed = JSON.parse(docSaved)
+        if (parsed?.role === 'doctor') return 'doctor_console'
+      } catch (e) {}
+    }
+    if (savedPatient && savedPatient.appMode) {
+      return savedPatient.appMode
+    }
+    return 'entry'
+  })
   const [doctorUser, setDoctorUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
 
   // ─── Patient State (Token-Based) ────────────────────────────
-  const [patientToken, setPatientToken] = useState('')
-  const [verifiedPatientData, setVerifiedPatientData] = useState(null)
-  const [currentStep, setCurrentStep] = useState(1) // 1: Identity, 2: Chat, 3: Docs, 4: Summary
-  const [language, setLanguage] = useState('en')
+  const [patientToken, setPatientToken] = useState(() => savedPatient?.patientToken || '')
+  const [verifiedPatientData, setVerifiedPatientData] = useState(() => savedPatient?.verifiedPatientData || null)
+  const [currentStep, setCurrentStep] = useState(() => savedPatient?.currentStep || 1) // 1: Identity, 2: Chat, 3: Docs, 4: Summary
+  const [language, setLanguage] = useState(() => savedPatient?.language || 'en')
   const [isLoading, setIsLoading] = useState(false)
-  const [session, setSession] = useState(null)
-  const [patient, setPatient] = useState(null)
-  const [messages, setMessages] = useState([])
-  const [socratesHpi, setSocratesHpi] = useState({})
-  const [redFlag, setRedFlag] = useState({ is_critical: false, severity: 'NORMAL' })
-  const [suggestedChips, setSuggestedChips] = useState([])
-  const [documents, setDocuments] = useState([])
+  const [session, setSession] = useState(() => savedPatient?.session || null)
+  const [patient, setPatient] = useState(() => savedPatient?.patient || null)
+  const [messages, setMessages] = useState(() => savedPatient?.messages || [])
+  const [socratesHpi, setSocratesHpi] = useState(() => savedPatient?.socratesHpi || {})
+  const [redFlag, setRedFlag] = useState(() => savedPatient?.redFlag || { is_critical: false, severity: 'NORMAL' })
+  const [suggestedChips, setSuggestedChips] = useState(() => savedPatient?.suggestedChips || [])
+  const [documents, setDocuments] = useState(() => savedPatient?.documents || [])
+
+  // ─── Save Patient Session to LocalStorage ───────────────────
+  useEffect(() => {
+    if (appMode === 'patient_intake' || appMode === 'patient_token') {
+      const payload = {
+        appMode,
+        patientToken,
+        verifiedPatientData,
+        currentStep,
+        language,
+        session,
+        patient,
+        messages,
+        socratesHpi,
+        redFlag,
+        suggestedChips,
+        documents,
+        updatedAt: new Date().toISOString()
+      }
+      localStorage.setItem(PATIENT_STORAGE_KEY, JSON.stringify(payload))
+    }
+  }, [
+    appMode,
+    patientToken,
+    verifiedPatientData,
+    currentStep,
+    language,
+    session,
+    patient,
+    messages,
+    socratesHpi,
+    redFlag,
+    suggestedChips,
+    documents
+  ])
+
+  // ─── Backend Intake Re-hydration on Reload ─────────────────
+  useEffect(() => {
+    const saved = loadSavedPatientState()
+    if (saved?.session?.id) {
+      fetch(`${API_URL}/intake/${saved.session.id}`)
+        .then(res => {
+          if (!res.ok) return null
+          return res.json()
+        })
+        .then(data => {
+          if (!data) return
+          if (data.session) {
+            setSession(prev => ({ ...prev, ...data.session }))
+            if (data.session.socrates_hpi && Object.keys(data.session.socrates_hpi).length > 0) {
+              setSocratesHpi(data.session.socrates_hpi)
+            }
+            if (data.session.red_flag_alert) {
+              setRedFlag(data.session.red_flag_alert)
+            }
+          }
+          if (data.patient) {
+            setPatient(data.patient)
+          }
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(data.messages)
+          }
+          if (Array.isArray(data.documents) && data.documents.length > 0) {
+            setDocuments(data.documents)
+          }
+        })
+        .catch(err => {
+          console.warn('Backend session re-hydration skipped/failed:', err)
+        })
+    }
+  }, [])
 
   // ─── Doctor Console State ───────────────────────────────────
   const [queue, setQueue] = useState([])
@@ -346,16 +444,29 @@ export default function App() {
   }
 
   function handleRestartKiosk() {
+    localStorage.removeItem(PATIENT_STORAGE_KEY)
     setSession(null)
     setPatient(null)
     setMessages([])
     setSocratesHpi({})
-    setRedFlag({ is_critical: false })
+    setRedFlag({ is_critical: false, severity: 'NORMAL' })
     setDocuments([])
     setPatientToken('')
     setVerifiedPatientData(null)
+    setSuggestedChips([])
     setCurrentStep(1)
     setAppMode('entry')
+  }
+
+  function handleSelectPatient() {
+    // If active patient intake session is already in progress, resume it directly!
+    if (session || (patientToken && currentStep > 1)) {
+      setAppMode('patient_intake')
+    } else if (patientToken && verifiedPatientData) {
+      setAppMode('patient_intake')
+    } else {
+      setAppMode('patient_token')
+    }
   }
 
   // ─── Rendering App Modes ────────────────────────────────────
@@ -372,8 +483,11 @@ export default function App() {
   if (appMode === 'entry') {
     return (
       <Auth
-        onSelectPatient={() => setAppMode('patient_token')}
+        onSelectPatient={handleSelectPatient}
         onDoctorLoginSuccess={handleDoctorLoginSuccess}
+        activePatient={patient}
+        activeSession={session}
+        onResetPatientSession={handleRestartKiosk}
       />
     )
   }
@@ -435,6 +549,8 @@ export default function App() {
         language={language}
         onLanguageChange={setLanguage}
         redFlag={redFlag}
+        onStepClick={(stepId) => setCurrentStep(stepId)}
+        hasSession={Boolean(session)}
       />
 
       <main className="app-main-body">
@@ -443,6 +559,9 @@ export default function App() {
             patientToken={patientToken}
             initialPatientData={verifiedPatientData}
             onStartIntake={handleStartIntake}
+            onBackToTokenEntry={() => setAppMode('patient_token')}
+            onRestartKiosk={handleRestartKiosk}
+            hasSession={Boolean(session)}
             loading={isLoading}
           />
         )}
@@ -457,6 +576,7 @@ export default function App() {
             suggestedChips={suggestedChips}
             onSendMessage={handleSendMessage}
             onProceedToDocs={() => setCurrentStep(3)}
+            onBack={() => setCurrentStep(1)}
             isLoading={isLoading}
           />
         )}
@@ -467,6 +587,7 @@ export default function App() {
             documents={documents}
             onUploadDocument={handleUploadDocument}
             onProceedToSummary={() => setCurrentStep(4)}
+            onBack={() => setCurrentStep(2)}
             isLoading={isLoading}
           />
         )}
@@ -480,6 +601,8 @@ export default function App() {
             redFlag={redFlag}
             onSubmitIntake={handleSubmitIntake}
             onRestartKiosk={handleRestartKiosk}
+            onBack={() => setCurrentStep(3)}
+            onBackToChat={() => setCurrentStep(2)}
             isLoading={isLoading}
           />
         )}

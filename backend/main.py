@@ -22,7 +22,8 @@ from database import (
     create_intake_session, get_intake_session, update_intake_session,
     list_physician_queue, save_session_message, get_session_messages,
     save_document, get_session_documents, log_audit_event, get_session_audit_logs,
-    get_token_security_alerts
+    get_token_security_alerts, get_patient_complete_medical_history,
+    update_patient_master_health_record
 )
 from agent import (
     run_intake_conversation, analyze_medical_document,
@@ -212,10 +213,12 @@ async def fetch_intake_session(session_id: int):
     if not session:
         raise HTTPException(status_code=404, detail="Intake session not found")
 
+    patient = await get_patient(session["patient_id"])
     messages = await get_session_messages(session_id)
     documents = await get_session_documents(session_id)
     return {
         "session": session,
+        "patient": patient,
         "messages": messages,
         "documents": documents
     }
@@ -382,16 +385,23 @@ async def get_physician_session_detail(
     session_id: int,
     doctor: Dict[str, str] = Depends(require_doctor_role)
 ):
-    """Retrieve full intake packet for physician examination (Strictly Doctor Protected)."""
+    """Retrieve full intake packet along with complete longitudinal patient history (Strictly Doctor Protected)."""
     session = await get_intake_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    patient_token = session.get("patient_token", "")
     patient = await get_patient(session["patient_id"])
     messages = await get_session_messages(session_id)
     documents = await get_session_documents(session_id)
     audit_logs = await get_session_audit_logs(session_id)
-    security_alerts = await get_token_security_alerts(session.get("patient_token", ""))
+    security_alerts = await get_token_security_alerts(patient_token)
+    
+    # Retrieve complete longitudinal medical history tied to this patient token
+    patient_history = await get_patient_complete_medical_history(
+        patient_token=patient_token,
+        current_session_id=session_id
+    )
 
     return {
         "session": session,
@@ -399,8 +409,19 @@ async def get_physician_session_detail(
         "messages": messages,
         "documents": documents,
         "audit_logs": audit_logs,
-        "security_alerts": security_alerts
+        "security_alerts": security_alerts,
+        "patient_history": patient_history
     }
+
+
+@app.get("/api/physician/patient-history/{patient_token}")
+async def get_physician_patient_history(
+    patient_token: str,
+    doctor: Dict[str, str] = Depends(require_doctor_role)
+):
+    """Fetch complete historical consultations, diagnoses, and lab tests for a patient token (Strictly Doctor Protected)."""
+    history = await get_patient_complete_medical_history(patient_token=patient_token)
+    return {"patient_history": history}
 
 
 @app.post("/api/physician/confirm")
@@ -444,6 +465,13 @@ async def confirm_physician_summary(
         status="physician_reviewed"
     )
 
+    # Automatically update the patient's master record with physician disposition notes
+    if session.get("patient_id"):
+        await update_patient_master_health_record(
+            patient_id=session["patient_id"],
+            doctor_note=data.disposition_notes
+        )
+
     await log_audit_event(
         actor_role="physician",
         action="SUMMARY_CONFIRMED",
@@ -452,10 +480,17 @@ async def confirm_physician_summary(
         details={"doctor": data.assigned_doctor, "doctor_id": doctor["user_id"], "notes": data.disposition_notes}
     )
 
+    # Return updated session and refreshed patient longitudinal history
+    refreshed_history = await get_patient_complete_medical_history(
+        patient_token=session.get("patient_token", ""),
+        current_session_id=data.session_id
+    )
+
     return {
         "status": "success",
         "session": updated,
         "fhir_bundle": fhir_bundle,
+        "patient_history": refreshed_history,
         "mock_sync": {
             "his_status": "Synchronized (Record #HIS-88291)",
             "abha_status": "Linked to ABHA Profile",

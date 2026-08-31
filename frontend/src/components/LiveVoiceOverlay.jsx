@@ -245,10 +245,10 @@ export default function LiveVoiceOverlay({
           <div className="live-brand-group">
             <span className="live-pulse-badge">
               <span className="live-dot-glow"></span>
-              GEMINI LIVE VOICE
+              VOICE CONSULTATION
             </span>
             <span className="lang-auto-badge">
-              {detectedLang === 'hi' ? '🇮🇳 हिंदी (Hindi Auto)' : '🌐 English (Auto)'}
+              {detectedLang === 'hi' ? 'हिंदी (Auto)' : 'English (Auto)'}
             </span>
           </div>
 
@@ -265,7 +265,7 @@ export default function LiveVoiceOverlay({
         {/* Red Flag Warning Box */}
         {redFlag?.is_critical && (
           <div className="live-red-flag-bar">
-            🚨 <strong>EMERGENCY RED FLAG:</strong> {redFlag.reason || 'Urgent clinical priority.'}
+            <strong>PRIORITY NOTICE:</strong> {redFlag.reason || 'Urgent clinical priority.'}
           </div>
         )}
 
@@ -274,15 +274,12 @@ export default function LiveVoiceOverlay({
           <div
             className={`gemini-live-orb ${isAiSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'} ${isLoading ? 'processing' : ''}`}
             onClick={isAiSpeaking ? handleInterruptAi : null}
-            title={isAiSpeaking ? 'Tap to interrupt AI' : 'Gemini Live Listening'}
+            title={isAiSpeaking ? 'Tap to interrupt' : 'Voice Mode Active'}
           >
             <div className="orb-inner-core">
               <div className="orb-wave-ring r1"></div>
               <div className="orb-wave-ring r2"></div>
               <div className="orb-wave-ring r3"></div>
-              <span className="orb-center-icon">
-                {isAiSpeaking ? '🔊' : isListening ? '🎙️' : '⚡'}
-              </span>
             </div>
           </div>
 
@@ -290,11 +287,11 @@ export default function LiveVoiceOverlay({
           <div className="live-status-container">
             <h3 className="live-status-title">
               {isLoading
-                ? '🧠 Gemini is processing...'
+                ? 'Processing response...'
                 : isAiSpeaking
-                ? 'AI is speaking (Speak or tap to interrupt)'
+                ? 'Responding (speak or tap to interrupt)'
                 : isListening
-                ? 'Listening naturally... (Speak in Hindi or English)'
+                ? 'Listening naturally... (speak in English or Hindi)'
                 : 'Connecting audio...'}
             </h3>
 
@@ -304,7 +301,7 @@ export default function LiveVoiceOverlay({
                 className="btn-interrupt-pill"
                 onClick={handleInterruptAi}
               >
-                ⏹️ Tap to Interrupt AI
+                Tap to Interrupt
               </button>
             )}
           </div>
@@ -321,7 +318,7 @@ export default function LiveVoiceOverlay({
             <div className="live-turns-history">
               {recentTurns.map((t, idx) => (
                 <div key={idx} className={`live-turn-row ${t.role}`}>
-                  <span className="turn-label">{t.role === 'assistant' ? 'AI:' : 'You:'}</span>
+                  <span className="turn-label">{t.role === 'assistant' ? 'Assistant:' : 'You:'}</span>
                   <span className="turn-content">{t.text}</span>
                 </div>
               ))}
@@ -329,16 +326,16 @@ export default function LiveVoiceOverlay({
           ) : (
             <div className="live-placeholder-hint">
               <p>Speak your symptoms freely in <strong>English</strong> or <strong>हिंदी</strong>.</p>
-              <span>No need to click buttons. The AI responds by voice and lets you interrupt anytime.</span>
+              <span>No need to press buttons. The assistant responds and allows natural interruptions.</span>
             </div>
           )}
         </div>
 
         {/* Live SOCRATES Mini Bar */}
         <div className="live-socrates-status-bar">
-          <span className="soc-mini-label">🩺 SOCRATES:</span>
+          <span className="soc-mini-label">Symptom Summary:</span>
           <span className="soc-mini-val">
-            <strong>{socratesHpi?.chief_complaint || 'Identifying complaint...'}</strong>
+            <strong>{socratesHpi?.chief_complaint || 'Identifying concerns...'}</strong>
             {socratesHpi?.site && ` • Site: ${socratesHpi.site}`}
             {socratesHpi?.onset && ` • Onset: ${socratesHpi.onset}`}
             {socratesHpi?.severity && ` • Severity: ${socratesHpi.severity}/10`}
@@ -352,7 +349,7 @@ export default function LiveVoiceOverlay({
             className="btn-return-chat"
             onClick={onClose}
           >
-            💬 Return to Text Chat
+            Return to Text Chat
           </button>
           
           <button
@@ -360,7 +357,7 @@ export default function LiveVoiceOverlay({
             className={`btn-mute-toggle ${isListening ? 'active' : ''}`}
             onClick={isListening ? stopLiveSession : startLiveListening}
           >
-            {isListening ? '⏸️ Pause Mic' : '▶️ Resume Mic'}
+            {isListening ? 'Pause Mic' : 'Resume Mic'}
           </button>
         </div>
       </div>
