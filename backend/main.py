@@ -113,6 +113,14 @@ class PhysicianConfirmRequest(BaseModel):
     confirmed_summary: str
     disposition_notes: Optional[str] = ""
     assigned_doctor: Optional[str] = "Attending Physician"
+    diagnosis: Optional[str] = ""
+    prescriptions: Optional[Any] = None
+    follow_up: Optional[str] = ""
+    status: Optional[str] = "completed"
+
+class PhysicianStatusRequest(BaseModel):
+    session_id: int
+    status: str
 
 
 # ─── 1. Patient Token Verification & Generation Endpoints ───────
@@ -345,7 +353,7 @@ async def submit_intake(data: IntakeSubmitRequest):
         messages=messages
     )
 
-    final_status = "urgent_triage" if session.get("red_flag_alert", {}).get("is_critical") else "completed"
+    final_status = "urgent_triage" if session.get("red_flag_alert", {}).get("is_critical") else "waiting"
 
     updated = await update_intake_session(
         data.session_id,
@@ -441,14 +449,19 @@ async def confirm_physician_summary(
         patient_info=patient or {},
         session_data=session,
         documents=documents,
-        confirmed_summary=data.confirmed_summary
+        confirmed_summary=data.confirmed_summary,
+        diagnosis=data.diagnosis or "",
+        prescriptions=data.prescriptions or []
     )
 
     disposition = {
-        "status": "confirmed_by_doctor",
+        "status": "completed",
         "assigned_doctor": data.assigned_doctor,
         "doctor_id": doctor["user_id"],
-        "notes": data.disposition_notes,
+        "diagnosis": data.diagnosis or "",
+        "prescriptions": data.prescriptions or [],
+        "follow_up": data.follow_up or "",
+        "notes": data.disposition_notes or "",
         "confirmed_at": datetime.now().isoformat(),
         "mock_integrations": {
             "his_sync": True,
@@ -457,19 +470,21 @@ async def confirm_physician_summary(
         }
     }
 
+    status_val = data.status or "completed"
     updated = await update_intake_session(
         data.session_id,
         structured_summary=data.confirmed_summary,
         clinician_disposition=disposition,
         fhir_bundle=fhir_bundle,
-        status="physician_reviewed"
+        status=status_val
     )
 
     # Automatically update the patient's master record with physician disposition notes
     if session.get("patient_id"):
+        combined_note = f"Diagnosis: {data.diagnosis}. Prescriptions: {data.prescriptions}. Notes: {data.disposition_notes}"
         await update_patient_master_health_record(
             patient_id=session["patient_id"],
-            doctor_note=data.disposition_notes
+            doctor_note=combined_note
         )
 
     await log_audit_event(
@@ -497,6 +512,64 @@ async def confirm_physician_summary(
             "fhir_status": "FHIR R4 Composition Validated"
         }
     }
+
+
+@app.post("/api/physician/update-status")
+async def update_physician_session_status(
+    data: PhysicianStatusRequest,
+    doctor: Dict[str, str] = Depends(require_doctor_role)
+):
+    """Doctor updates the session status (e.g. waiting -> in_consultation -> completed)."""
+    session = await get_intake_session(data.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    updated = await update_intake_session(
+        data.session_id,
+        status=data.status
+    )
+
+    await log_audit_event(
+        actor_role="physician",
+        action="STATUS_UPDATED",
+        session_id=data.session_id,
+        patient_token=session.get("patient_token"),
+        details={"new_status": data.status, "doctor_id": doctor["user_id"]}
+    )
+
+    return {"status": "success", "session": updated, "new_status": data.status}
+
+
+@app.get("/api/physician/fhir/{session_id}")
+async def get_or_generate_session_fhir(
+    session_id: int,
+    doctor: Dict[str, str] = Depends(require_doctor_role)
+):
+    """Retrieve or dynamically generate HL7 FHIR R4 Bundle for any session."""
+    session = await get_intake_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # If bundle already generated and stored, return it
+    bundle = session.get("fhir_bundle")
+    if bundle and isinstance(bundle, dict) and len(bundle) > 0 and bundle.get("resourceType") == "Bundle":
+        return {"session_id": session_id, "fhir_bundle": bundle}
+
+    # Otherwise, generate compliant bundle on the fly from current intake data
+    patient = await get_patient(session["patient_id"])
+    documents = await get_session_documents(session_id)
+    disp = session.get("clinician_disposition", {}) or {}
+    summary = session.get("structured_summary") or session.get("socrates_hpi", {}).get("chief_complaint") or "Intake completed"
+
+    fhir_bundle = await generate_abdm_fhir_bundle(
+        patient_info=patient or {},
+        session_data=session,
+        documents=documents,
+        confirmed_summary=summary,
+        diagnosis=disp.get("diagnosis", ""),
+        prescriptions=disp.get("prescriptions", [])
+    )
+    return {"session_id": session_id, "fhir_bundle": fhir_bundle}
 
 
 # ─── Health Check ─────────────────────────────────────────────

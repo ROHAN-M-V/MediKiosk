@@ -262,7 +262,7 @@ export default function App() {
     }
   }
 
-  async function handleConfirmSummary(sessionId, summary, notes) {
+  async function handleConfirmSummary(sessionId, summary, notes, diagnosis = '', prescriptions = [], followUp = '') {
     setIsLoading(true)
     try {
       const res = await fetch(`${API_URL}/physician/confirm`, {
@@ -276,18 +276,79 @@ export default function App() {
           session_id: sessionId,
           confirmed_summary: summary,
           disposition_notes: notes,
-          assigned_doctor: doctorUser?.name || 'Attending Physician'
+          diagnosis: diagnosis,
+          prescriptions: prescriptions,
+          follow_up: followUp,
+          assigned_doctor: doctorUser?.name || 'Attending Physician',
+          status: 'completed'
         })
       })
       if (res.status === 403) {
         alert('Access Denied: Only authenticated physicians can confirm summaries.')
         return
       }
-      fetchSessionDetail(sessionId)
-      fetchPhysicianQueue()
-      alert('✓ Clinical summary verified and confirmed! Mock HIS & ABDM Sync successfully triggered.')
+      await fetchSessionDetail(sessionId)
+      await fetchPhysicianQueue()
+      alert('✓ OPD Consultation verified! Patient record moved to Completed.')
     } catch (err) {
       console.error('Failed to confirm summary:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function handleUpdateStatus(sessionId, newStatus) {
+    try {
+      const res = await fetch(`${API_URL}/physician/update-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': doctorUser?.id || 'doctor',
+          'X-User-Role': 'doctor'
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          status: newStatus
+        })
+      })
+      if (res.ok) {
+        setQueue(prevQueue => prevQueue.map(item => item.id === sessionId ? { ...item, status: newStatus } : item))
+        fetchSessionDetail(sessionId)
+      }
+    } catch (err) {
+      console.error('Failed to update status:', err)
+    }
+  }
+
+  async function handleOpenFhir(bundle, sessionId) {
+    if (bundle && Object.keys(bundle).length > 0 && bundle.resourceType === 'Bundle') {
+      setFhirModalData(bundle)
+      return
+    }
+    if (!sessionId) {
+      alert('No patient session selected to view FHIR R4 record.')
+      return
+    }
+    setIsLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/physician/fhir/${sessionId}`, {
+        headers: {
+          'X-User-Id': doctorUser?.id || 'doctor',
+          'X-User-Role': 'doctor'
+        }
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      if (data.fhir_bundle) {
+        setFhirModalData(data.fhir_bundle)
+      } else {
+        alert('Could not retrieve FHIR R4 record.')
+      }
+    } catch (err) {
+      console.error('Failed to fetch FHIR bundle:', err)
+      alert('Failed to load FHIR R4 record.')
     } finally {
       setIsLoading(false)
     }
@@ -522,7 +583,9 @@ export default function App() {
             onSelectSession={setSelectedSessionId}
             sessionDetail={sessionDetail}
             onConfirmSummary={handleConfirmSummary}
-            onOpenFhir={(bundle) => setFhirModalData(bundle)}
+            onUpdateStatus={handleUpdateStatus}
+            doctorUser={doctorUser}
+            onOpenFhir={handleOpenFhir}
             isLoading={isLoading}
             onRefreshQueue={fetchPhysicianQueue}
           />

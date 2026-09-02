@@ -317,12 +317,125 @@ async def generate_abdm_fhir_bundle(
     patient_info: Dict[str, Any],
     session_data: Dict[str, Any],
     documents: List[Dict[str, Any]],
-    confirmed_summary: str
+    confirmed_summary: str,
+    diagnosis: Optional[str] = "",
+    prescriptions: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """Generate an HL7 FHIR R4 Compliant Bundle for Ayushman Bharat Digital Mission (ABDM)."""
     patient_id = f"PAT-{patient_info.get('id', '999')}"
     encounter_id = f"ENC-{session_data.get('id', '101')}"
     timestamp = datetime.now().isoformat() + "Z"
+
+    entries = [
+        {
+            "fullUrl": f"urn:uuid:Composition/{encounter_id}",
+            "resource": {
+                "resourceType": "Composition",
+                "id": encounter_id,
+                "status": "final",
+                "type": {
+                    "coding": [{
+                        "system": "http://snomed.info/sct",
+                        "code": "371530004",
+                        "display": "Clinical consultation report"
+                    }]
+                },
+                "subject": {"reference": f"Patient/{patient_id}", "display": patient_info.get("name")},
+                "date": timestamp,
+                "title": "MediKiosk Clinical Intake & Triage Record",
+                "section": [{
+                    "title": "Clinical Summary Draft",
+                    "text": {"status": "generated", "div": f"<div>{confirmed_summary}</div>"}
+                }]
+            }
+        },
+        {
+            "fullUrl": f"urn:uuid:Patient/{patient_id}",
+            "resource": {
+                "resourceType": "Patient",
+                "id": patient_id,
+                "name": [{"text": patient_info.get("name")}],
+                "gender": (patient_info.get("gender") or "unknown").lower(),
+                "identifier": [{"system": "https://healthid.abdm.gov.in", "value": patient_info.get("abha_id") or "UNLINKED"}]
+            }
+        }
+    ]
+
+    # Add Condition resource if diagnosis is present
+    if diagnosis and diagnosis.strip():
+        cond_id = f"COND-{session_data.get('id', '101')}"
+        entries.append({
+            "fullUrl": f"urn:uuid:Condition/{cond_id}",
+            "resource": {
+                "resourceType": "Condition",
+                "id": cond_id,
+                "clinicalStatus": {
+                    "coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+                        "code": "active"
+                    }]
+                },
+                "verificationStatus": {
+                    "coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+                        "code": "confirmed"
+                    }]
+                },
+                "code": {
+                    "text": diagnosis
+                },
+                "subject": {"reference": f"Patient/{patient_id}", "display": patient_info.get("name")},
+                "recordedDate": timestamp
+            }
+        })
+
+    # Add MedicationRequest resources if prescriptions are present
+    if prescriptions and isinstance(prescriptions, list):
+        for idx, rx in enumerate(prescriptions):
+            med_name = rx.get("name", "").strip() if isinstance(rx, dict) else str(rx).strip()
+            if not med_name:
+                continue
+            med_id = f"MED-{session_data.get('id', '101')}-{idx + 1}"
+            dosage_str = rx.get("dosage", "") if isinstance(rx, dict) else ""
+            freq_str = rx.get("frequency", "") if isinstance(rx, dict) else ""
+            dur_str = rx.get("duration", "") if isinstance(rx, dict) else ""
+            instructions = " ".join(filter(bool, [dosage_str, freq_str, dur_str])) or "As directed"
+            entries.append({
+                "fullUrl": f"urn:uuid:MedicationRequest/{med_id}",
+                "resource": {
+                    "resourceType": "MedicationRequest",
+                    "id": med_id,
+                    "status": "active",
+                    "intent": "order",
+                    "medicationCodeableConcept": {
+                        "text": med_name
+                    },
+                    "subject": {"reference": f"Patient/{patient_id}", "display": patient_info.get("name")},
+                    "authoredOn": timestamp,
+                    "dosageInstruction": [{
+                        "text": instructions
+                    }]
+                }
+            })
+
+    # Add DocumentReference resources for attached files
+    if documents and isinstance(documents, list):
+        for idx, doc in enumerate(documents):
+            doc_id = f"DOC-{doc.get('id', idx + 1)}"
+            entries.append({
+                "fullUrl": f"urn:uuid:DocumentReference/{doc_id}",
+                "resource": {
+                    "resourceType": "DocumentReference",
+                    "id": doc_id,
+                    "status": "current",
+                    "type": {
+                        "text": doc.get("doc_type", "Medical Document")
+                    },
+                    "subject": {"reference": f"Patient/{patient_id}", "display": patient_info.get("name")},
+                    "date": doc.get("created_at", timestamp),
+                    "description": doc.get("file_name", "attached_record")
+                }
+            })
 
     bundle = {
         "resourceType": "Bundle",
@@ -338,39 +451,6 @@ async def generate_abdm_fhir_bundle(
         },
         "type": "document",
         "timestamp": timestamp,
-        "entry": [
-            {
-                "fullUrl": f"urn:uuid:Composition/{encounter_id}",
-                "resource": {
-                    "resourceType": "Composition",
-                    "id": encounter_id,
-                    "status": "final",
-                    "type": {
-                        "coding": [{
-                            "system": "http://snomed.info/sct",
-                            "code": "371530004",
-                            "display": "Clinical consultation report"
-                        }]
-                    },
-                    "subject": {"reference": f"Patient/{patient_id}", "display": patient_info.get("name")},
-                    "date": timestamp,
-                    "title": "MediKiosk Clinical Intake & Triage Record",
-                    "section": [{
-                        "title": "Clinical Summary Draft",
-                        "text": {"status": "generated", "div": f"<div>{confirmed_summary}</div>"}
-                    }]
-                }
-            },
-            {
-                "fullUrl": f"urn:uuid:Patient/{patient_id}",
-                "resource": {
-                    "resourceType": "Patient",
-                    "id": patient_id,
-                    "name": [{"text": patient_info.get("name")}],
-                    "gender": (patient_info.get("gender") or "unknown").lower(),
-                    "identifier": [{"system": "https://healthid.abdm.gov.in", "value": patient_info.get("abha_id") or "UNLINKED"}]
-                }
-            }
-        ]
+        "entry": entries
     }
     return bundle
