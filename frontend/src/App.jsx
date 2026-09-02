@@ -543,14 +543,16 @@ export default function App() {
       <KioskHeader
         doctorUser={null}
         isDoctorMode={false}
-        onOpenDoctorPortal={() => setAppMode('entry')}
-        onSignOutDoctor={handleRestartKiosk}
+        onRestartKiosk={handleRestartKiosk}
+        patient={patient}
+        patientToken={patientToken}
+        verifiedPatientData={verifiedPatientData}
+        session={session}
         currentStep={currentStep}
         language={language}
         onLanguageChange={setLanguage}
         redFlag={redFlag}
         onStepClick={(stepId) => setCurrentStep(stepId)}
-        hasSession={Boolean(session)}
       />
 
       <main className="app-main-body">

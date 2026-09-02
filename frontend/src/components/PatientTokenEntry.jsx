@@ -125,7 +125,7 @@ export default function PatientTokenEntry({
           className="btn-back-role"
           onClick={onBackToRoleSelect}
         >
-          ← Return to Role Selection
+          ← Back to Start
         </button>
 
         {/* ─── SCREEN 1: Token Input Form ─── */}
@@ -133,11 +133,11 @@ export default function PatientTokenEntry({
           <div>
             <div className="auth-role-banner">
               <span className="role-badge-large patient">
-                👤 Patient Kiosk
+                Patient Check-In
               </span>
-              <h2>Patient Identification</h2>
+              <h2>Enter Your Token</h2>
               <p className="auth-desc">
-                Enter your unique Patient Token to retrieve your check-in profile.
+                Enter your Patient Token from a previous visit, or start as a new patient.
               </p>
             </div>
 
@@ -154,8 +154,8 @@ export default function PatientTokenEntry({
                   className="token-input-field"
                   autoFocus
                 />
-                <span className="form-subtext" style={{ fontSize: '11px', color: 'var(--accent-muted)', marginTop: '4px', display: 'block' }}>
-                  Enter your permanent token received during your previous visit.
+                <span className="form-subtext" style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
+                  If you have visited before, enter the token code given to you.
                 </span>
               </div>
 
@@ -164,12 +164,12 @@ export default function PatientTokenEntry({
                 className="btn-auth-submit"
                 disabled={loading || !tokenInput.trim()}
               >
-                {loading ? 'Verifying Token...' : 'Look Up Patient Token →'}
+                {loading ? 'Checking Token...' : 'Find My Details →'}
               </button>
             </form>
 
             <div className="auth-or-divider" style={{ margin: '24px 0' }}>
-              <span>first time at kiosk?</span>
+              <span>First time at this clinic?</span>
             </div>
 
             <button
@@ -178,7 +178,7 @@ export default function PatientTokenEntry({
               onClick={handleGenerateNewToken}
               disabled={loading}
             >
-              ⚡ Generate New Patient Token
+              Start as New Patient (Generate Token)
             </button>
           </div>
         )}
@@ -188,11 +188,11 @@ export default function PatientTokenEntry({
           <div>
             <div className="auth-role-banner">
               <span className="role-badge-large patient">
-                🔒 Identity Verification
+                Confirm Details
               </span>
-              <h2>Confirm Your Identity</h2>
+              <h2>Is This Information Correct?</h2>
               <p className="auth-desc">
-                Please verify that the name and age associated with this token match your identity.
+                Please confirm that the name and details below match your identity.
               </p>
             </div>
 
@@ -202,17 +202,17 @@ export default function PatientTokenEntry({
                 <strong className="id-confirm-token">{tokenData.token}</strong>
               </div>
               <div className="id-confirm-row">
-                <span className="id-confirm-label">Patient Name:</span>
+                <span className="id-confirm-label">Name:</span>
                 <strong className="id-confirm-value">{tokenData.name}</strong>
               </div>
               <div className="id-confirm-row">
-                <span className="id-confirm-label">Age / Gender:</span>
+                <span className="id-confirm-label">Age & Gender:</span>
                 <span className="id-confirm-value">{tokenData.age} yrs • {tokenData.gender || 'Patient'}</span>
               </div>
             </div>
 
             <p className="privacy-guarantee-note">
-              🛡️ <em>Zero-Data Exposure Guarantee: Previous clinical diagnoses, prescriptions, and lab history are kept strictly confidential and never displayed on this kiosk screen.</em>
+              <em>Your previous prescriptions and clinical history remain confidential and will only be shared with your attending doctor.</em>
             </p>
 
             <div className="confirm-actions-stack">
@@ -230,7 +230,7 @@ export default function PatientTokenEntry({
                 onClick={handleTokenMismatch}
                 disabled={loading}
               >
-                ✕ No, this is not me
+                ✕ No, this is not my information
               </button>
             </div>
           </div>
@@ -241,19 +241,19 @@ export default function PatientTokenEntry({
           <div>
             <div className="auth-role-banner">
               <span className="role-badge-large patient">
-                🎉 New Token Created
+                New Patient
               </span>
               <h2>Your Patient Token</h2>
               <p className="auth-desc">
-                This token is your permanent identification for all future visits at MediKiosk.
+                Please keep this token for your records. You can use it whenever you visit this hospital.
               </p>
             </div>
 
             <div className="new-token-display-box">
-              <div className="token-display-label">Permanent Patient Token</div>
+              <div className="token-display-label">Patient Token Number</div>
               <div className="token-display-number">{generatedToken}</div>
               <p className="token-save-hint">
-                📸 Please make a note of or take a picture of this token for your next hospital visit.
+                You may take a photo or note down this number.
               </p>
             </div>
 
@@ -262,7 +262,7 @@ export default function PatientTokenEntry({
               className="btn-auth-submit"
               onClick={handleProceedWithNewToken}
             >
-              Continue to Registration & Intake →
+              Continue to Check-In Details →
             </button>
           </div>
         )}
@@ -270,13 +270,13 @@ export default function PatientTokenEntry({
         {/* ─── SCREEN 4: Mismatch Security Alert Logged ─── */}
         {screen === 'mismatch_alert' && (
           <div className="mismatch-notice-screen">
-            <div className="mismatch-icon">🛡️</div>
-            <h2>Security Notice Logged</h2>
+            <div className="mismatch-icon">ℹ️</div>
+            <h2>Assistance Requested</h2>
             <p className="mismatch-desc">
-              We have recorded that this token did not match your identity. A security notification has been dispatched to hospital administration and the consulting physician.
+              We have noted that this token did not match your information. Please visit the reception desk or generate a new patient token.
             </p>
             <p className="mismatch-sub">
-              No private medical information or consultation history from this token was revealed.
+              No personal medical information was shown.
             </p>
 
             <div className="mismatch-actions">

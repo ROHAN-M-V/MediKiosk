@@ -66,43 +66,43 @@ export default function ConversationalIntakeStep({
 
   return (
     <div className="intake-layout">
-      {/* Mobile Top Toggle for SOCRATES */}
+      {/* Mobile Top Toggle for Summary */}
       <div className="mobile-tracker-toggle-bar">
         <button
           type="button"
           className="btn-toggle-tracker"
           onClick={() => setShowMobileSidebar(!showMobileSidebar)}
         >
-          {showMobileSidebar ? '✕ Close Clinical Tracker' : '🩺 View Live SOCRATES Tracker'}
+          {showMobileSidebar ? '✕ Close Summary' : '📋 View Symptom Summary'}
         </button>
       </div>
 
       {/* Main Chat Panel */}
       <div className="intake-chat-panel">
-        {/* Top Chat Bar: Live Voice Launcher & Language Indicator */}
+        {/* Top Chat Bar */}
         <div className="chat-top-banner-bar">
           <div className="mode-toggle-group">
-            <span className="active-mode-pill">💬 Standard Chat</span>
+            <span className="active-mode-pill">Text Chat</span>
             <button
               type="button"
               className="btn-launch-gemini-live"
               onClick={() => setIsLiveVoiceOpen(true)}
-              title="Launch hands-free real-time voice mode"
+              title="Speak directly using voice"
             >
-              🎙️ Switch to Gemini Live Voice
+              🎙️ Open Voice Mode
             </button>
           </div>
-          <span className="lang-support-badge">🌐 English & 🇮🇳 हिंदी Supported</span>
+          <span className="lang-support-badge">English & हिंदी</span>
         </div>
 
         {/* Red Flag Warning Banner */}
         {redFlag?.is_critical && (
           <div className="red-flag-card">
-            <div className="flag-icon">🚨</div>
+            <div className="flag-icon">⚠️</div>
             <div className="flag-content">
-              <h4>CRITICAL RED-FLAG DETECTED: {redFlag.severity}</h4>
-              <p>{redFlag.reason || 'Patient symptoms suggest urgent clinical priority.'}</p>
-              <span className="flag-action">Triage team alerted. Continue intake for attending physician review.</span>
+              <h4>Priority Alert: {redFlag.severity}</h4>
+              <p>{redFlag.reason || 'Your answers indicate urgent symptoms.'}</p>
+              <span className="flag-action">A nurse or clinical staff member will be alerted. Please continue.</span>
             </div>
           </div>
         )}
@@ -112,14 +112,14 @@ export default function ConversationalIntakeStep({
           {messages.map((m, idx) => (
             <div key={idx} className={`intake-bubble-row ${m.role}`}>
               <div className="bubble-avatar">
-                {m.role === 'assistant' ? 'M' : 'P'}
+                {m.role === 'assistant' ? 'Kiosk' : 'You'}
               </div>
               <div className="bubble-body">
                 <div className="bubble-text">
                   <ReactMarkdown>{m.content}</ReactMarkdown>
                 </div>
                 <div className="bubble-meta">
-                  {m.provenance === 'document_ocr' && <span className="prov-tag">OCR Scanned</span>}
+                  {m.provenance === 'document_ocr' && <span className="prov-tag">From Document</span>}
                   <span>{new Date(m.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               </div>
@@ -128,7 +128,7 @@ export default function ConversationalIntakeStep({
 
           {isLoading && (
             <div className="intake-bubble-row assistant">
-              <div className="bubble-avatar">M</div>
+              <div className="bubble-avatar">Kiosk</div>
               <div className="typing-pulse">
                 <span></span><span></span><span></span>
               </div>
@@ -141,7 +141,7 @@ export default function ConversationalIntakeStep({
         {/* Suggested Quick Tap Chips */}
         {suggestedChips?.length > 0 && !isLoading && (
           <div className="suggested-chips-bar">
-            <span className="chips-title">Quick Select:</span>
+            <span className="chips-title">Suggested answers:</span>
             <div className="chips-scroll-wrap">
               {suggestedChips.map((chip, i) => (
                 <button
@@ -157,22 +157,22 @@ export default function ConversationalIntakeStep({
           </div>
         )}
 
-        {/* Input Bar with Voice, Live Voice & Send */}
+        {/* Input Bar with Voice & Send */}
         <div className="intake-input-bar">
           <button
             type="button"
             className={`btn-voice-record ${isListening ? 'listening' : ''}`}
             onClick={toggleVoiceInput}
-            title="Speak symptoms (Voice-to-Text in English/Hindi)"
+            title="Speak your symptoms"
           >
-            {isListening ? '🎙️ Listening...' : '🎤 Speak'}
+            {isListening ? 'Listening...' : '🎤 Speak'}
           </button>
 
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type in English or हिंदी (or speak)..."
+            placeholder="Type your response here..."
             rows={1}
             disabled={isLoading}
           />
@@ -183,56 +183,56 @@ export default function ConversationalIntakeStep({
             onClick={() => handleSend()}
             disabled={!inputText.trim() || isLoading}
           >
-            Send ➤
+            Send →
           </button>
         </div>
 
         {/* Bottom Stage Action */}
         <div className="intake-footer-action">
           <p className="kiosk-hint">
-            Answered the main questions? You can attach previous prescriptions or lab reports next.
+            Done answering? You can upload past prescriptions or test reports next.
           </p>
           <button type="button" className="btn-kiosk-primary" onClick={onProceedToDocs}>
-            Proceed to Document Upload (Step 3) →
+            Continue to Document Upload (Step 3) →
           </button>
         </div>
       </div>
 
-      {/* Right Sidebar / Mobile Drawer: Real-time SOCRATES State */}
+      {/* Right Sidebar: Human-Friendly Symptom Summary */}
       <aside className={`intake-socrates-sidebar ${showMobileSidebar ? 'mobile-open' : ''}`}>
         <div className="socrates-header">
-          <h3>🩺 SOCRATES Clinical State</h3>
-          <span className="socrates-sub">Live AI Extraction (Dual Language)</span>
+          <h3>Symptom Summary</h3>
+          <span className="socrates-sub">Information noted for doctor</span>
         </div>
 
         <div className="socrates-card-list">
           <div className="socrates-item">
-            <span className="soc-label">Chief Complaint:</span>
-            <span className="soc-val">{socratesHpi?.chief_complaint || 'Identifying...'}</span>
+            <span className="soc-label">Main Concern:</span>
+            <span className="soc-val">{socratesHpi?.chief_complaint || 'Listening...'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[S] Site / Location:</span>
+            <span className="soc-label">Location:</span>
             <span className="soc-val">{socratesHpi?.site || '—'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[O] Onset & Timeline:</span>
+            <span className="soc-label">When it started:</span>
             <span className="soc-val">{socratesHpi?.onset || '—'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[C] Character / Quality:</span>
+            <span className="soc-label">How it feels:</span>
             <span className="soc-val">{socratesHpi?.character || '—'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[R] Radiation:</span>
+            <span className="soc-label">Spreading to:</span>
             <span className="soc-val">{socratesHpi?.radiation || '—'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[A] Associated Symptoms:</span>
+            <span className="soc-label">Other symptoms:</span>
             <span className="soc-val">
               {Array.isArray(socratesHpi?.associations) && socratesHpi.associations.length > 0
                 ? socratesHpi.associations.join(', ')
@@ -241,26 +241,21 @@ export default function ConversationalIntakeStep({
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[T] Time Course:</span>
+            <span className="soc-label">Timing / Pattern:</span>
             <span className="soc-val">{socratesHpi?.time_course || '—'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[E] Exacerbating / Relieving:</span>
+            <span className="soc-label">Triggers / Relief:</span>
             <span className="soc-val">{socratesHpi?.exacerbating_relieving || '—'}</span>
           </div>
 
           <div className="socrates-item">
-            <span className="soc-label">[S] Severity (1-10):</span>
+            <span className="soc-label">Pain level (1-10):</span>
             <span className={`soc-val ${socratesHpi?.severity ? 'bold' : ''}`}>
               {socratesHpi?.severity || '—'}
             </span>
           </div>
-        </div>
-
-        <div className="patient-quick-badge">
-          <div className="badge-name">{patient?.name}</div>
-          <div className="badge-meta">{patient?.age} yrs • {patient?.gender} • Token: {session?.patient_token || 'N/A'}</div>
         </div>
       </aside>
 
