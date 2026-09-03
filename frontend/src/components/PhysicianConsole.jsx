@@ -32,6 +32,11 @@ export default function PhysicianConsole({
   const [historySubTab, setHistorySubTab] = useState('timeline') // 'timeline' | 'medications' | 'labs' | 'notes'
   const [expandedVisitId, setExpandedVisitId] = useState(null)
   const [verificationToast, setVerificationToast] = useState(null)
+  const [isConversationOpen, setIsConversationOpen] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [fhirLoading, setFhirLoading] = useState(false)
 
   const session = sessionDetail?.session
   const patient = sessionDetail?.patient || {}
@@ -40,6 +45,9 @@ export default function PhysicianConsole({
   const redFlag = session?.red_flag_alert || {}
   const securityAlerts = sessionDetail?.security_alerts || []
   const patientHistory = sessionDetail?.patient_history || {}
+  const currentQuerySummary = sessionDetail?.current_query_summary
+  const patientHistorySummary = sessionDetail?.patient_history_summary
+  const uploadedDocumentsSummary = sessionDetail?.uploaded_documents_summary
 
   // Submission & verification time formatting helpers
   function formatSubmissionTime(timestamp) {
@@ -147,20 +155,68 @@ export default function PhysicianConsole({
     setActivePacketView('current')
   }
 
-  function handleStartExamination() {
+  async function handleStartExamination() {
     if (!session?.id) return
-    if (onUpdateStatus) {
-      onUpdateStatus(session.id, 'in_consultation')
+    setStatusUpdating(true)
+    try {
+      if (onUpdateStatus) {
+        await onUpdateStatus(session.id, 'in_consultation')
+      }
+    } finally {
+      setStatusUpdating(false)
     }
   }
 
-  function handleVerifyAndComplete() {
+  async function handlePutOnHold() {
     if (!session?.id) return
-    const cleanedRx = prescriptions.filter(p => p.name && p.name.trim())
-    onConfirmSummary(session.id, editedSummary, doctorNotes, diagnosis, cleanedRx, followUp)
-    setIsEditing(false)
-    setVerificationToast(`✓ Patient ${session.patient_name || ''} (${session.queue_number}) verified and moved to Completed.`)
-    setTimeout(() => setVerificationToast(null), 6000)
+    setStatusUpdating(true)
+    try {
+      if (onUpdateStatus) {
+        await onUpdateStatus(session.id, 'waiting')
+      }
+    } finally {
+      setStatusUpdating(false)
+    }
+  }
+
+  async function handleVerifyAndComplete() {
+    if (!session?.id) return
+    if (!diagnosis.trim()) {
+      alert('Please enter a Working or Final Diagnosis before verifying consultation.')
+      return
+    }
+    setIsVerifying(true)
+    try {
+      const cleanedRx = prescriptions.filter(p => p.name && p.name.trim())
+      await onConfirmSummary(session.id, editedSummary, doctorNotes, diagnosis, cleanedRx, followUp)
+      setIsEditing(false)
+      setVerificationToast(`✓ Patient ${session.patient_name || ''} (${session.queue_number}) verified and moved to Completed.`)
+      setTimeout(() => setVerificationToast(null), 6000)
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
+  async function handleRefreshQueueAction() {
+    setIsRefreshing(true)
+    try {
+      if (onRefreshQueue) {
+        await onRefreshQueue()
+      }
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  async function handleViewFhirAction() {
+    setFhirLoading(true)
+    try {
+      if (onOpenFhir) {
+        await onOpenFhir(session.fhir_bundle, session.id)
+      }
+    } finally {
+      setFhirLoading(false)
+    }
   }
 
   // Prescription builder helpers
@@ -192,6 +248,7 @@ export default function PhysicianConsole({
   }
   const isReturningPatient = previousVisits.length > 0 || Boolean(patientHistory?.is_returning_patient)
   const cumMedications = patientHistory?.cumulative_medications || []
+  const cumulativeMeds = cumMedications
   const cumLabs = patientHistory?.cumulative_lab_reports || []
   const prevNotes = patientHistory?.previous_doctor_notes || []
   const overallSummary = patientHistory?.overall_health_summary ||
@@ -271,10 +328,12 @@ export default function PhysicianConsole({
               <button
                 type="button"
                 className="btn-queue-refresh"
-                onClick={onRefreshQueue}
+                onClick={handleRefreshQueueAction}
+                disabled={isRefreshing}
                 title="Refresh queue now"
               >
-                ↻ Refresh
+                {isRefreshing && <span className="btn-spinner"></span>}
+                {isRefreshing ? 'Refreshing...' : '↻ Refresh'}
               </button>
             </div>
           </div>
@@ -533,30 +592,34 @@ export default function PhysicianConsole({
                         type="button"
                         className="btn-status-action start"
                         onClick={handleStartExamination}
+                        disabled={statusUpdating}
                       >
-                        ▶ Start Examination
+                        {statusUpdating && <span className="btn-spinner"></span>}
+                        {statusUpdating ? 'Starting Exam...' : '▶ Start Examination'}
                       </button>
                     ) : (
                       <button
                         type="button"
                         className="btn-status-action pause"
-                        onClick={() => onUpdateStatus(session.id, 'waiting')}
+                        onClick={handlePutOnHold}
+                        disabled={statusUpdating}
                         title="Put back on waiting list if needed"
                       >
-                        ⏸ Put On Hold
+                        {statusUpdating && <span className="btn-spinner"></span>}
+                        {statusUpdating ? 'Updating...' : '⏸ Put On Hold'}
                       </button>
                     )
                   )}
 
-                  {session.fhir_bundle && Object.keys(session.fhir_bundle).length > 0 && (
-                    <button
-                      type="button"
-                      className="btn-fhir-view"
-                      onClick={() => onOpenFhir(session.fhir_bundle)}
-                    >
-                      FHIR R4 Record
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="btn-fhir-view"
+                    onClick={handleViewFhirAction}
+                    disabled={fhirLoading}
+                  >
+                    {fhirLoading && <span className="btn-spinner"></span>}
+                    {fhirLoading ? 'Loading FHIR...' : 'FHIR R4 Record'}
+                  </button>
                 </div>
               </div>
 
@@ -651,330 +714,415 @@ export default function PhysicianConsole({
                     </div>
                   )}
 
-                  <div className="packet-main-grid">
-                    {/* Left Column: Clinical Summary + Doctor Disposition */}
-                    <div className="packet-left-col">
-                      {/* Clinical Summary Draft Card */}
-                      <div className="clinical-card">
-                        <div className="card-top-bar">
-                          <h3>AI Clinical Intake Summary</h3>
-                          {!isSessionCompleted && (
-                            <button
-                              type="button"
-                              className="btn-edit-toggle"
-                              onClick={() => setIsEditing(!isEditing)}
-                            >
-                              {isEditing ? 'View Formatted Preview' : 'Edit Summary Text'}
-                            </button>
-                          )}
+                  {/* ────────────────────────────────────────────────────────
+                     CLINICAL OVERVIEW: 3 CONCISE SUMMARIES STACK
+                     ──────────────────────────────────────────────────────── */}
+                  <div className="clinical-overview-stack">
+                    {/* SUMMARY 1: Current Query Summary (Most Prominent) */}
+                    <div className="clinical-card query-summary-card">
+                      <div className="card-top-bar">
+                        <div className="summary-title-group">
+                          <span className="summary-type-pill current">Current Query Summary</span>
+                          <h3>Reason for Today's Visit</h3>
                         </div>
-
-                        {isEditing && !isSessionCompleted ? (
-                          <textarea
-                            className="summary-edit-textarea"
-                            rows={12}
-                            value={editedSummary}
-                            onChange={(e) => setEditedSummary(e.target.value)}
-                          />
-                        ) : (
-                          <div className="summary-markdown-view">
-                            <ReactMarkdown>
-                              {editedSummary || '*Clinical summary draft generating...*'}
-                            </ReactMarkdown>
-                          </div>
+                        {session.assigned_doctor_name && (
+                          <span className="doctor-assigned-tag">
+                            Doctor: {session.assigned_doctor_name}
+                          </span>
                         )}
                       </div>
 
-                      {/* Doctor Consultation Card: READ-ONLY IF COMPLETED vs ACTIVE VERIFICATION IF ONGOING */}
-                      {isSessionCompleted ? (
-                        /* READ-ONLY COMPLETED CONSULTATION SUMMARY */
-                        <div className="clinical-card consultation-outcome-card">
-                          <div className="card-top-bar">
-                            <h3>Verified Consultation & Prescription Details</h3>
-                            <span className="doctor-assigned-tag">
-                              Verified by Dr. {session.clinician_disposition?.physician_name || doctorUser?.name?.replace(/^Dr\.\s*/i, '') || 'Attending'}
-                            </span>
-                          </div>
+                      <div className="query-summary-highlight">
+                        {currentQuerySummary?.text_overview || session.socrates_hpi?.chief_complaint || 'General Outpatient Consultation'}
+                      </div>
 
-                          {/* Verified Diagnosis */}
-                          <div className="consult-readonly-field">
-                            <span className="readonly-label">Working / Final Diagnosis</span>
-                            <div className="readonly-value-box highlight-dx">
-                              {session.clinician_disposition?.diagnosis || diagnosis || 'No specific diagnosis recorded.'}
-                            </div>
-                          </div>
-
-                          {/* Verified Prescriptions */}
-                          <div className="consult-readonly-field">
-                            <span className="readonly-label">Verified Prescriptions</span>
-                            {prescriptions.filter(p => p.name && p.name.trim()).length > 0 ? (
-                              <div className="readonly-rx-table">
-                                <div className="readonly-rx-head">
-                                  <span>Medicine Name</span>
-                                  <span>Dosage</span>
-                                  <span>Frequency</span>
-                                  <span>Duration</span>
-                                </div>
-                                {prescriptions.filter(p => p.name && p.name.trim()).map((rx, idx) => (
-                                  <div key={idx} className="readonly-rx-row">
-                                    <strong>{rx.name}</strong>
-                                    <span>{rx.dosage || '—'}</span>
-                                    <span>{rx.frequency || '—'}</span>
-                                    <span>{rx.duration || '—'}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="readonly-empty-text">No medications prescribed for this visit.</div>
-                            )}
-                          </div>
-
-                          {/* Doctor Notes */}
-                          <div className="consult-readonly-field">
-                            <span className="readonly-label">Doctor Notes & Advice to Patient</span>
-                            <div className="readonly-value-box">
-                              {session.clinician_disposition?.notes || doctorNotes || 'No additional advice recorded.'}
-                            </div>
-                          </div>
-
-                          {/* Follow-Up */}
-                          <div className="consult-readonly-field">
-                            <span className="readonly-label">Recommended Follow-up</span>
-                            <div className="readonly-value-inline">
-                              <strong>{session.clinician_disposition?.follow_up || followUp || 'As needed / SOS'}</strong>
-                            </div>
-                          </div>
-
-                          {/* Read-Only Lock Footer */}
-                          <div className="consult-completed-footer">
-                            <span className="lock-tag">🔒 Read-Only Record</span>
-                            <span className="completed-subtext">
-                              This OPD consultation has been verified and permanently locked in hospital records. It cannot be re-verified or modified.
-                            </span>
-                          </div>
+                      <div className="query-grid-meta">
+                        <div className="q-meta-item">
+                          <strong>Chief Concern:</strong>
+                          <span>{session.socrates_hpi?.chief_complaint || '—'}</span>
                         </div>
-                      ) : (
-                        /* ACTIVE ONGOING CONSULTATION & VERIFICATION FORM */
-                        <div className="clinical-card consultation-outcome-card">
-                          <div className="card-top-bar">
-                            <h3>Attending Physician Consultation</h3>
-                            <span className="doctor-assigned-tag">
-                              Dr. {doctorUser?.name?.replace(/^Dr\.\s*/i, '') || 'Attending'}
-                            </span>
-                          </div>
+                        <div className="q-meta-item">
+                          <strong>Pain / Severity:</strong>
+                          <span>{session.socrates_hpi?.severity ? `${session.socrates_hpi.severity} / 10` : '—'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Onset:</strong>
+                          <span>{session.socrates_hpi?.onset || '—'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Location / Site:</strong>
+                          <span>{session.socrates_hpi?.site || '—'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Character:</strong>
+                          <span>{session.socrates_hpi?.character || '—'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Timing / Pattern:</strong>
+                          <span>{session.socrates_hpi?.timing || '—'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Radiation:</strong>
+                          <span>{session.socrates_hpi?.radiation || '—'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Associated Symptoms:</strong>
+                          <span>{Array.isArray(session.socrates_hpi?.associations) && session.socrates_hpi.associations.length > 0 ? session.socrates_hpi.associations.join(', ') : 'None reported'}</span>
+                        </div>
+                        <div className="q-meta-item">
+                          <strong>Assigned Doctor:</strong>
+                          <span style={{ color: '#1e40af', fontWeight: 600 }}>{session.assigned_doctor_name || 'General OPD Doctor'} {session.assigned_doctor_specialty ? `(${session.assigned_doctor_specialty})` : ''}</span>
+                        </div>
+                      </div>
+                    </div>
 
-                          {/* Working / Final Diagnosis */}
-                          <div className="consult-form-group">
-                            <label>Working / Final Diagnosis *</label>
-                            <input
-                              type="text"
-                              className="consult-input"
-                              placeholder="e.g. Acute Bronchitis, Costochondritis, Hypertension Stage 1"
-                              value={diagnosis}
-                              onChange={(e) => setDiagnosis(e.target.value)}
-                            />
-                          </div>
+                    {/* SUMMARY 2: Patient History Summary */}
+                    <div className="clinical-card history-summary-card">
+                      <div className="card-top-bar">
+                        <div className="summary-title-group">
+                          <span className="summary-type-pill history">Patient History Summary</span>
+                          <h3>Longitudinal Medical Background</h3>
+                        </div>
+                        {previousVisits.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn-open-history"
+                            style={{ padding: '5px 12px', fontSize: '12px' }}
+                            onClick={() => setActivePacketView('history')}
+                          >
+                            View Full Timeline ({previousVisits.length}) →
+                          </button>
+                        )}
+                      </div>
 
-                          {/* Prescriptions Builder */}
-                          <div className="consult-form-group">
-                            <div className="rx-header-row">
-                              <label>Prescriptions & Medications</label>
-                              <button
-                                type="button"
-                                className="btn-add-rx"
-                                onClick={addPrescriptionRow}
-                              >
-                                + Add Medicine
-                              </button>
-                            </div>
+                      <div className="history-summary-text">
+                        {patientHistorySummary?.text_overview || (previousVisits.length > 0
+                          ? `Returning patient with ${previousVisits.length} documented prior consultation(s) at MediKiosk.`
+                          : 'First-time patient check-in at MediKiosk. No prior hospital visits or electronic consultation records on file.')}
+                      </div>
 
-                            <div className="rx-table-container">
-                              <div className="rx-table-header">
-                                <span>Medicine Name</span>
-                                <span>Dosage</span>
-                                <span>Frequency</span>
-                                <span>Duration</span>
-                                <span></span>
-                              </div>
-                              {prescriptions.map((rx) => (
-                                <div key={rx.id} className="rx-table-row">
-                                  <input
-                                    type="text"
-                                    placeholder="e.g. Paracetamol"
-                                    value={rx.name}
-                                    onChange={(e) => updatePrescriptionField(rx.id, 'name', e.target.value)}
-                                    className="rx-input"
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="650mg"
-                                    value={rx.dosage}
-                                    onChange={(e) => updatePrescriptionField(rx.id, 'dosage', e.target.value)}
-                                    className="rx-input"
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="1-0-1 after food"
-                                    value={rx.frequency}
-                                    onChange={(e) => updatePrescriptionField(rx.id, 'frequency', e.target.value)}
-                                    className="rx-input"
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="5 days"
-                                    value={rx.duration}
-                                    onChange={(e) => updatePrescriptionField(rx.id, 'duration', e.target.value)}
-                                    className="rx-input"
-                                  />
-                                  <button
-                                    type="button"
-                                    className="btn-remove-rx"
-                                    onClick={() => removePrescriptionRow(rx.id)}
-                                    title="Remove medication"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                      <div className="history-tags-row">
+                        <div className="history-tag">
+                          <strong>Chronic Conditions:</strong> {patient.conditions?.length > 0 ? patient.conditions.join(', ') : 'None documented'}
+                        </div>
+                        <div className="history-tag">
+                          <strong>Active Medications:</strong> {cumulativeMeds.length > 0 ? cumulativeMeds.map(m => m.name).join(', ') : 'None active'}
+                        </div>
+                        <div className="history-tag">
+                          <strong>Allergies:</strong> {patient.allergies?.length > 0 ? patient.allergies.join(', ') : 'No known drug allergies (NKDA)'}
+                        </div>
+                        <div className="history-tag">
+                          <strong>Prior Visits:</strong> {previousVisits.length} recorded
+                        </div>
+                      </div>
+                    </div>
 
-                          {/* Doctor Notes & Clinical Advice */}
-                          <div className="consult-form-group">
-                            <label>Doctor Notes & Advice to Patient</label>
-                            <textarea
-                              className="consult-textarea"
-                              rows={3}
-                              placeholder="e.g. Advised rest and warm fluids. Return immediately if chest tightness worsens or dyspnea occurs."
-                              value={doctorNotes}
-                              onChange={(e) => setDoctorNotes(e.target.value)}
-                            />
-                          </div>
+                    {/* SUMMARY 3: Uploaded Documents Summary */}
+                    <div className="clinical-card docs-summary-card">
+                      <div className="card-top-bar">
+                        <div className="summary-title-group">
+                          <span className="summary-type-pill docs">Uploaded Documents Summary</span>
+                          <h3>External Records & Scans ({documents.length})</h3>
+                        </div>
+                      </div>
 
-                          {/* Follow-up Timeline */}
-                          <div className="consult-form-group">
-                            <label>Recommended Follow-Up</label>
-                            <input
-                              type="text"
-                              className="consult-input"
-                              placeholder="e.g. 5 days, or SOS if fever persists"
-                              value={followUp}
-                              onChange={(e) => setFollowUp(e.target.value)}
-                            />
-                          </div>
+                      <div className="docs-summary-text">
+                        {uploadedDocumentsSummary?.text_overview || (documents.length > 0
+                          ? `Patient provided ${documents.length} external document(s) during check-in for physician review.`
+                          : 'No external medical prescriptions, lab reports, or discharge summaries were uploaded for this visit.')}
+                      </div>
 
-                          {/* Verify & Complete Button */}
-                          <div className="consult-action-footer">
-                            <button
-                              type="button"
-                              className="btn-finalize-consultation"
-                              onClick={handleVerifyAndComplete}
-                              disabled={isLoading}
-                            >
-                              {isLoading ? 'Verifying...' : '✓ Verify & Complete Consultation'}
-                            </button>
-                            <span className="finalize-subtext">
-                              Verifies submitted details, records diagnosis & prescriptions, and automatically moves instance to Completed.
-                            </span>
+                      {/* Abnormal lab flags if any */}
+                      {uploadedDocumentsSummary?.abnormal_lab_flags?.length > 0 && (
+                        <div style={{ marginTop: '8px' }}>
+                          <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                            Critical Abnormal Lab Findings:
+                          </span>
+                          <div className="docs-abnormal-tags">
+                            {uploadedDocumentsSummary.abnormal_lab_flags.map((flag, i) => (
+                              <span key={i} className="lab-flag-pill">⚠️ {flag}</span>
+                            ))}
                           </div>
                         </div>
                       )}
 
-                      {/* Presenting Symptoms Breakdown */}
-                      <div className="clinical-card">
-                        <h3>Presenting Symptoms Breakdown</h3>
-                        <div className="socrates-detail-grid">
-                          <div><strong>Main Concern:</strong> {session.socrates_hpi?.chief_complaint || '—'}</div>
-                          <div><strong>Location / Site:</strong> {session.socrates_hpi?.site || '—'}</div>
-                          <div><strong>Onset:</strong> {session.socrates_hpi?.onset || '—'}</div>
-                          <div><strong>Character:</strong> {session.socrates_hpi?.character || '—'}</div>
-                          <div><strong>Radiation:</strong> {session.socrates_hpi?.radiation || '—'}</div>
-                          <div><strong>Associations:</strong> {Array.isArray(session.socrates_hpi?.associations) ? session.socrates_hpi.associations.join(', ') : '—'}</div>
-                          <div><strong>Timing:</strong> {session.socrates_hpi?.timing || '—'}</div>
-                          <div><strong>Severity:</strong> {session.socrates_hpi?.severity || '—'}</div>
+                      {/* Extracted medicines if any */}
+                      {uploadedDocumentsSummary?.extracted_medications?.length > 0 && (
+                        <div style={{ marginTop: '8px', fontSize: '12.5px' }}>
+                          <strong>Medications extracted from uploaded prescriptions: </strong>
+                          <span>{uploadedDocumentsSummary.extracted_medications.join(', ')}</span>
                         </div>
-                      </div>
+                      )}
+
+                      {/* Document file cards if uploaded */}
+                      {documents.length > 0 && (
+                        <div className="doctor-doc-list" style={{ marginTop: '14px' }}>
+                          {documents.map((doc, idx) => (
+                            <div key={idx} className="doc-detail-card">
+                              <div className="doc-detail-header">
+                                <span className="doc-type-pill">{doc.doc_type?.replace('_', ' ').toUpperCase()}</span>
+                                <span className="doc-title">{doc.file_name}</span>
+                              </div>
+                              {doc.file_path && (
+                                <a
+                                  href={`${BASE_SERVER_URL}/uploads/${doc.file_path.split(/[\/\\]/).pop()}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="btn-view-orig-doc"
+                                  style={{ marginTop: '6px' }}
+                                >
+                                  View Uploaded Document ↗
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Right Column: Scanned Documents & Conversation */}
-                    <div className="packet-right-col">
-                      {/* Attached Documents */}
-                      <div className="clinical-card">
-                        <h3>Attached Documents for Today ({documents.length})</h3>
-                        {documents.length === 0 ? (
-                          <p className="kiosk-hint">No external reports uploaded by patient for today's visit.</p>
-                        ) : (
-                          <div className="doctor-doc-list">
-                            {documents.map((doc, idx) => {
-                              const ent = doc.extracted_entities || {}
-                              return (
-                                <div key={idx} className="doc-detail-card">
-                                  <div className="doc-detail-header">
-                                    <span className="doc-type-pill">{doc.doc_type?.toUpperCase()}</span>
-                                    <span className="doc-title">{doc.file_name}</span>
-                                  </div>
+                    {/* ────────────────────────────────────────────────────────
+                       SECONDARY EXPANDABLE SECTION: VIEW CURRENT CONVERSATION
+                       ──────────────────────────────────────────────────────── */}
+                    <div className="clinical-card expandable-chat-card">
+                      <button
+                        type="button"
+                        className="btn-toggle-conversation"
+                        onClick={() => setIsConversationOpen(!isConversationOpen)}
+                      >
+                        <div className="toggle-title-left">
+                          <span className="toggle-icon">{isConversationOpen ? '▼' : '▶'}</span>
+                          <span>{isConversationOpen ? 'Hide Current Conversation' : 'View Current Conversation'}</span>
+                          <span className="toggle-count-pill">{messages.length} messages</span>
+                        </div>
+                        <span className="toggle-hint">
+                          {isConversationOpen ? 'Click to collapse transcript' : 'Click to view full chat history with kiosk'}
+                        </span>
+                      </button>
 
-                                  {/* Lab tests with abnormal flags */}
-                                  {ent.lab_results?.length > 0 && (
-                                    <div className="doc-sub-section">
-                                      <span className="sub-title">Lab Results:</span>
-                                      {ent.lab_results.map((l, i) => (
-                                        <div key={i} className={`p-lab-item ${l.is_abnormal ? 'danger' : ''}`}>
-                                          <span>{l.test_name}: <strong>{l.value} {l.unit}</strong></span>
-                                          {l.is_abnormal && <span className="p-flag-badge">ABNORMAL ({l.flag})</span>}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {/* Extracted medications */}
-                                  {ent.medications?.length > 0 && (
-                                    <div className="doc-sub-section">
-                                      <span className="sub-title">Extracted Medications:</span>
-                                      {ent.medications.map((m, i) => (
-                                        <div key={i} className="p-med-item">
-                                          {m.name} — {m.dosage} ({m.frequency})
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {doc.file_path && (
-                                    <a
-                                      href={`${BASE_SERVER_URL}/uploads/${doc.file_path.split(/[\/\\]/).pop()}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="btn-view-orig-doc"
-                                    >
-                                      View Uploaded Document ↗
-                                    </a>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Patient Kiosk Conversation */}
-                      <div className="clinical-card">
-                        <h3>Patient Kiosk Conversation ({messages.length} messages)</h3>
-                        <div className="transcript-scroll">
+                      {isConversationOpen && (
+                        <div className="expanded-transcript-body">
                           {messages.length === 0 ? (
-                            <p className="kiosk-hint">No messages recorded.</p>
+                            <p className="kiosk-hint">No messages recorded in this intake session.</p>
                           ) : (
-                            messages.map((m, i) => (
-                              <div key={i} className={`transcript-row ${m.role}`}>
-                                <span className="role-tag">
-                                  {m.role === 'assistant' ? 'Kiosk' : 'Patient'}:
-                                </span>
-                                <span className="text">{m.content}</span>
-                              </div>
-                            ))
+                            <div className="transcript-scroll" style={{ maxHeight: '340px' }}>
+                              {messages.map((m, i) => (
+                                <div key={i} className={`transcript-row ${m.role}`}>
+                                  <span className="role-tag">
+                                    {m.role === 'assistant' ? 'Kiosk' : 'Patient'}:
+                                  </span>
+                                  <span className="text">{m.content}</span>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
-                      </div>
+                      )}
                     </div>
+
+                    {/* ────────────────────────────────────────────────────────
+                       ATTENDING PHYSICIAN CONSULTATION OUTCOME
+                       ──────────────────────────────────────────────────────── */}
+                    {isSessionCompleted ? (
+                      /* READ-ONLY COMPLETED CONSULTATION SUMMARY */
+                      <div className="clinical-card consultation-outcome-card">
+                        <div className="card-top-bar">
+                          <h3>Verified Consultation & Prescription Record</h3>
+                          <span className="doctor-assigned-tag">
+                            Verified by Dr. {session.clinician_disposition?.physician_name || doctorUser?.name?.replace(/^Dr\.\s*/i, '') || 'Attending'}
+                          </span>
+                        </div>
+
+                        {/* Verified Diagnosis */}
+                        <div className="consult-readonly-field">
+                          <span className="readonly-label">Working / Final Diagnosis</span>
+                          <div className="readonly-value-box highlight-dx">
+                            {session.clinician_disposition?.diagnosis || diagnosis || 'No specific diagnosis recorded.'}
+                          </div>
+                        </div>
+
+                        {/* Verified Prescriptions */}
+                        <div className="consult-readonly-field">
+                          <span className="readonly-label">Verified Prescriptions</span>
+                          {prescriptions.filter(p => p.name && p.name.trim()).length > 0 ? (
+                            <div className="readonly-rx-table">
+                              <div className="readonly-rx-head">
+                                <span>Medicine Name</span>
+                                <span>Dosage</span>
+                                <span>Frequency</span>
+                                <span>Duration</span>
+                              </div>
+                              {prescriptions.filter(p => p.name && p.name.trim()).map((rx, idx) => (
+                                <div key={idx} className="readonly-rx-row">
+                                  <strong>{rx.name}</strong>
+                                  <span>{rx.dosage || '—'}</span>
+                                  <span>{rx.frequency || '—'}</span>
+                                  <span>{rx.duration || '—'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="readonly-empty-text">No medications prescribed for this visit.</div>
+                          )}
+                        </div>
+
+                        {/* Doctor Notes & Clinical Advice */}
+                        <div className="consult-readonly-field">
+                          <span className="readonly-label">Doctor Notes & Clinical Advice</span>
+                          <div className="readonly-value-box">
+                            {session.clinician_disposition?.physician_notes || doctorNotes || 'No additional physician notes recorded.'}
+                          </div>
+                        </div>
+
+                        {/* Follow-Up Plan */}
+                        <div className="consult-readonly-field">
+                          <span className="readonly-label">Follow-Up Recommendation</span>
+                          <div className="readonly-value-box">
+                            {session.clinician_disposition?.follow_up || followUp || 'As needed / Routine follow-up'}
+                          </div>
+                        </div>
+
+                        <div className="completed-consultation-footer">
+                          <span>🔒 Consultation finalized & verified. This completed record is permanently archived in read-only mode.</span>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ACTIVE ONGOING CONSULTATION & VERIFICATION FORM */
+                      <div className="clinical-card doctor-consult-card active-consultation-card">
+                        <div className="consult-card-header">
+                          <div>
+                            <h3>Attending Physician Consultation & Verification</h3>
+                            <p className="consult-card-sub">
+                              Record final diagnosis, prescribe medications, and verify this patient to complete the consultation.
+                            </p>
+                          </div>
+                          <span className="doctor-assigned-tag">
+                            Dr. {doctorUser?.name?.replace(/^Dr\.\s*/i, '') || 'Attending Physician'}
+                          </span>
+                        </div>
+
+                        {/* Working / Final Diagnosis */}
+                        <div className="consult-field-group">
+                          <label className="consult-label">Working / Final Diagnosis *</label>
+                          <input
+                            type="text"
+                            className="consult-input-text"
+                            placeholder="e.g. Acute Viral Gastroenteritis, Type 2 Diabetes Mellitus"
+                            value={diagnosis}
+                            onChange={(e) => setDiagnosis(e.target.value)}
+                            disabled={isVerifying}
+                          />
+                        </div>
+
+                        {/* Structured Prescriptions Builder */}
+                        <div className="consult-field-group">
+                          <div className="consult-field-header-row">
+                            <label className="consult-label">Prescribed Medications</label>
+                            <button
+                              type="button"
+                              className="btn-add-rx"
+                              onClick={addPrescriptionRow}
+                              disabled={isVerifying}
+                            >
+                              + Add Medicine
+                            </button>
+                          </div>
+
+                          <div className="prescriptions-builder-table">
+                            <div className="rx-table-header">
+                              <span>Medicine Name</span>
+                              <span>Dosage (e.g. 500mg)</span>
+                              <span>Frequency (e.g. 1-0-1)</span>
+                              <span>Duration (e.g. 5 days)</span>
+                              <span></span>
+                            </div>
+
+                            {prescriptions.map((rx) => (
+                              <div key={rx.id} className="rx-table-row">
+                                <input
+                                  type="text"
+                                  placeholder="Medicine Name (e.g. Paracetamol)"
+                                  value={rx.name}
+                                  onChange={(e) => updatePrescription(rx.id, 'name', e.target.value)}
+                                  disabled={isVerifying}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Dosage (500mg)"
+                                  value={rx.dosage}
+                                  onChange={(e) => updatePrescription(rx.id, 'dosage', e.target.value)}
+                                  disabled={isVerifying}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Frequency (1-0-1 after food)"
+                                  value={rx.frequency}
+                                  onChange={(e) => updatePrescription(rx.id, 'frequency', e.target.value)}
+                                  disabled={isVerifying}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Duration (5 days)"
+                                  value={rx.duration}
+                                  onChange={(e) => updatePrescription(rx.id, 'duration', e.target.value)}
+                                  disabled={isVerifying}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn-remove-rx"
+                                  onClick={() => removePrescriptionRow(rx.id)}
+                                  title="Remove medication"
+                                  disabled={isVerifying}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Physician Notes & Clinical Advice */}
+                        <div className="consult-field-group">
+                          <label className="consult-label">Physician Notes & Patient Instructions</label>
+                          <textarea
+                            className="consult-textarea"
+                            rows={3}
+                            placeholder="Advice, lifestyle modifications, warning signs to watch for..."
+                            value={doctorNotes}
+                            onChange={(e) => setDoctorNotes(e.target.value)}
+                            disabled={isVerifying}
+                          />
+                        </div>
+
+                        {/* Follow-Up Recommendation */}
+                        <div className="consult-field-group">
+                          <label className="consult-label">Recommended Follow-Up</label>
+                          <input
+                            type="text"
+                            className="consult-input-text"
+                            placeholder="e.g. Review in 5 days or if symptoms worsen"
+                            value={followUp}
+                            onChange={(e) => setFollowUp(e.target.value)}
+                            disabled={isVerifying}
+                          />
+                        </div>
+
+                        {/* Verify & Complete Consultation Button */}
+                        <div className="consultation-actions-bar">
+                          <button
+                            type="button"
+                            className="btn-finalize-consultation"
+                            onClick={handleVerifyAndComplete}
+                            disabled={isVerifying || isLoading}
+                          >
+                            {isVerifying && <span className="btn-spinner"></span>}
+                            {isVerifying ? 'Verifying Consultation...' : '✓ Verify & Complete Consultation'}
+                          </button>
+                          <span className="finalize-subtext">
+                            Verifies details, seals diagnosis & prescriptions, and automatically moves patient to Completed.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

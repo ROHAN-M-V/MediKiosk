@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Auth from './components/Auth'
 import PatientTokenEntry from './components/PatientTokenEntry'
+import DoctorSelectStep from './components/DoctorSelectStep'
+import DoctorProfileSetup from './components/DoctorProfileSetup'
 import KioskHeader from './components/KioskHeader'
 import IdentityConsentStep from './components/IdentityConsentStep'
 import ConversationalIntakeStep from './components/ConversationalIntakeStep'
@@ -29,7 +31,7 @@ export default function App() {
   const savedPatient = loadSavedPatientState()
 
   // ─── Top-Level Navigation State ─────────────────────────────
-  // 'entry' | 'patient_token' | 'patient_intake' | 'doctor_console'
+  // 'entry' | 'patient_token' | 'patient_doctor_select' | 'patient_intake' | 'doctor_console'
   const [appMode, setAppMode] = useState(() => {
     const docSaved = localStorage.getItem('medikiosk_doctor_user')
     if (docSaved) {
@@ -49,6 +51,7 @@ export default function App() {
   // ─── Patient State (Token-Based) ────────────────────────────
   const [patientToken, setPatientToken] = useState(() => savedPatient?.patientToken || '')
   const [verifiedPatientData, setVerifiedPatientData] = useState(() => savedPatient?.verifiedPatientData || null)
+  const [selectedDoctor, setSelectedDoctor] = useState(() => savedPatient?.selectedDoctor || null)
   const [currentStep, setCurrentStep] = useState(() => savedPatient?.currentStep || 1) // 1: Identity, 2: Chat, 3: Docs, 4: Summary
   const [language, setLanguage] = useState(() => savedPatient?.language || 'en')
   const [isLoading, setIsLoading] = useState(false)
@@ -62,11 +65,12 @@ export default function App() {
 
   // ─── Save Patient Session to LocalStorage ───────────────────
   useEffect(() => {
-    if (appMode === 'patient_intake' || appMode === 'patient_token') {
+    if (appMode === 'patient_intake' || appMode === 'patient_token' || appMode === 'patient_doctor_select') {
       const payload = {
         appMode,
         patientToken,
         verifiedPatientData,
+        selectedDoctor,
         currentStep,
         language,
         session,
@@ -84,6 +88,7 @@ export default function App() {
     appMode,
     patientToken,
     verifiedPatientData,
+    selectedDoctor,
     currentStep,
     language,
     session,
@@ -139,20 +144,41 @@ export default function App() {
 
   // ─── Doctor Session Check on Mount ──────────────────────────
   useEffect(() => {
+    async function syncDoctorWithBackend(email, fallbackName, specialty) {
+      try {
+        const res = await fetch(`${API_URL}/doctors/sync-google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email,
+            name: fallbackName
+          })
+        })
+        const data = await res.json()
+        if (data.doctor) {
+          return data.doctor
+        }
+      } catch (e) {
+        console.warn('Backend doctor sync error:', e)
+      }
+      return {
+        id: 'doc_' + email.split('@')[0],
+        email: email,
+        name: fallbackName,
+        role: 'doctor',
+        specialty: specialty || 'General Medicine / OPD',
+        profile_completed: false
+      }
+    }
+
     if (isSupabaseConfigured && supabase) {
-      supabase.auth.getSession().then(({ data: { session: supaSession } }) => {
+      supabase.auth.getSession().then(async ({ data: { session: supaSession } }) => {
         if (supaSession?.user) {
           const user = supaSession.user
           const docName = user.user_metadata?.name || user.user_metadata?.full_name || (user.email ? `Dr. ${user.email.split('@')[0]}` : 'Dr. Attending')
-          const doctorObj = {
-            id: user.id,
-            email: user.email,
-            name: docName,
-            role: 'doctor',
-            specialty: user.user_metadata?.specialty || 'Attending Physician'
-          }
-          localStorage.setItem('medikiosk_doctor_user', JSON.stringify(doctorObj))
-          setDoctorUser(doctorObj)
+          const syncedDoc = await syncDoctorWithBackend(user.email, docName, user.user_metadata?.specialty)
+          localStorage.setItem('medikiosk_doctor_user', JSON.stringify(syncedDoc))
+          setDoctorUser(syncedDoc)
           setAppMode('doctor_console')
           if (window.location.hash.includes('access_token')) {
             window.history.replaceState(null, '', window.location.pathname)
@@ -163,19 +189,13 @@ export default function App() {
         setAuthLoading(false)
       })
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, supaSession) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, supaSession) => {
         if (supaSession?.user) {
           const user = supaSession.user
           const docName = user.user_metadata?.name || user.user_metadata?.full_name || (user.email ? `Dr. ${user.email.split('@')[0]}` : 'Dr. Attending')
-          const doctorObj = {
-            id: user.id,
-            email: user.email,
-            name: docName,
-            role: 'doctor',
-            specialty: user.user_metadata?.specialty || 'Attending Physician'
-          }
-          localStorage.setItem('medikiosk_doctor_user', JSON.stringify(doctorObj))
-          setDoctorUser(doctorObj)
+          const syncedDoc = await syncDoctorWithBackend(user.email, docName, user.user_metadata?.specialty)
+          localStorage.setItem('medikiosk_doctor_user', JSON.stringify(syncedDoc))
+          setDoctorUser(syncedDoc)
           setAppMode('doctor_console')
         } else if (event === 'SIGNED_OUT') {
           setDoctorUser(null)
@@ -374,6 +394,11 @@ export default function App() {
   function handlePatientVerified(patientPayload) {
     setPatientToken(patientPayload.token)
     setVerifiedPatientData(patientPayload)
+    setAppMode('patient_doctor_select')
+  }
+
+  function handleDoctorSelected(doctor) {
+    setSelectedDoctor(doctor)
     setCurrentStep(1)
     setAppMode('patient_intake')
   }
@@ -387,7 +412,10 @@ export default function App() {
         body: JSON.stringify({
           ...patientFormData,
           patient_token: patientToken,
-          language
+          language,
+          assigned_doctor_id: selectedDoctor?.id || null,
+          assigned_doctor_name: selectedDoctor?.name || null,
+          assigned_doctor_specialty: selectedDoctor?.specialty || null
         })
       })
       const data = await res.json()
@@ -514,6 +542,7 @@ export default function App() {
     setDocuments([])
     setPatientToken('')
     setVerifiedPatientData(null)
+    setSelectedDoctor(null)
     setSuggestedChips([])
     setCurrentStep(1)
     setAppMode('entry')
@@ -523,8 +552,10 @@ export default function App() {
     // If active patient intake session is already in progress, resume it directly!
     if (session || (patientToken && currentStep > 1)) {
       setAppMode('patient_intake')
-    } else if (patientToken && verifiedPatientData) {
+    } else if (patientToken && selectedDoctor) {
       setAppMode('patient_intake')
+    } else if (patientToken && verifiedPatientData) {
+      setAppMode('patient_doctor_select')
     } else {
       setAppMode('patient_token')
     }
@@ -563,8 +594,33 @@ export default function App() {
     )
   }
 
+  // Mode 2.5: Patient Doctor Selection
+  if (appMode === 'patient_doctor_select') {
+    return (
+      <DoctorSelectStep
+        patientToken={patientToken}
+        patientData={verifiedPatientData}
+        onDoctorSelected={handleDoctorSelected}
+        onBackToToken={() => setAppMode('patient_token')}
+      />
+    )
+  }
+
   // Mode 3: Doctor Console
   if (appMode === 'doctor_console') {
+    // First login profile setup screen
+    if (doctorUser && !doctorUser.profile_completed) {
+      return (
+        <DoctorProfileSetup
+          doctorUser={doctorUser}
+          onProfileSaved={(updatedDoc) => {
+            setDoctorUser(updatedDoc)
+          }}
+          onSignOut={handleSignOutDoctor}
+        />
+      )
+    }
+
     return (
       <div className="app-shell">
         <KioskHeader
@@ -623,8 +679,9 @@ export default function App() {
           <IdentityConsentStep
             patientToken={patientToken}
             initialPatientData={verifiedPatientData}
+            selectedDoctor={selectedDoctor}
             onStartIntake={handleStartIntake}
-            onBackToTokenEntry={() => setAppMode('patient_token')}
+            onBackToTokenEntry={() => setAppMode('patient_doctor_select')}
             onRestartKiosk={handleRestartKiosk}
             hasSession={Boolean(session)}
             loading={isLoading}

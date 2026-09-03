@@ -164,6 +164,7 @@ export default function PatientTokenEntry({
                 className="btn-auth-submit"
                 disabled={loading || !tokenInput.trim()}
               >
+                {loading && <span className="btn-spinner"></span>}
                 {loading ? 'Checking Token...' : 'Find My Details →'}
               </button>
             </form>
@@ -178,7 +179,8 @@ export default function PatientTokenEntry({
               onClick={handleGenerateNewToken}
               disabled={loading}
             >
-              Start as New Patient (Generate Token)
+              {loading && <span className="btn-spinner"></span>}
+              {loading ? 'Generating Patient Token...' : 'Start as New Patient (Generate Token)'}
             </button>
           </div>
         )}
@@ -220,6 +222,7 @@ export default function PatientTokenEntry({
                 type="button"
                 className="btn-confirm-yes"
                 onClick={handleConfirmIdentity}
+                disabled={loading}
               >
                 ✓ Yes, this is me (Continue)
               </button>
@@ -230,7 +233,8 @@ export default function PatientTokenEntry({
                 onClick={handleTokenMismatch}
                 disabled={loading}
               >
-                ✕ No, this is not my information
+                {loading && <span className="btn-spinner"></span>}
+                {loading ? 'Logging Alert...' : '✕ No, this is not my information'}
               </button>
             </div>
           </div>

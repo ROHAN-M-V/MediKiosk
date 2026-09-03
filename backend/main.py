@@ -23,7 +23,9 @@ from database import (
     list_physician_queue, save_session_message, get_session_messages,
     save_document, get_session_documents, log_audit_event, get_session_audit_logs,
     get_token_security_alerts, get_patient_complete_medical_history,
-    update_patient_master_health_record
+    update_patient_master_health_record,
+    get_doctor_by_email, get_doctor_by_id, create_doctor,
+    update_doctor_profile, list_available_doctors
 )
 from agent import (
     run_intake_conversation, analyze_medical_document,
@@ -99,6 +101,29 @@ class PatientInitRequest(BaseModel):
     language: Optional[str] = "en"
     department: Optional[str] = "allopathic"
     consent: Optional[Dict[str, Any]] = None
+    assigned_doctor_id: Optional[str] = ""
+    assigned_doctor_name: Optional[str] = ""
+    assigned_doctor_specialty: Optional[str] = ""
+
+class DoctorRegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = ""
+    specialty: Optional[str] = ""
+
+class DoctorLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class DoctorGoogleSyncRequest(BaseModel):
+    email: str
+    name: Optional[str] = ""
+    google_id: Optional[str] = ""
+
+class DoctorProfileUpdateRequest(BaseModel):
+    doctor_id: str
+    name: str
+    specialty: str
 
 class IntakeChatRequest(BaseModel):
     session_id: int
@@ -198,11 +223,15 @@ async def start_intake_session(data: PatientInitRequest):
         user_id=f"token_{token}",
         department=data.department or "allopathic",
         language=data.language or "en",
-        consent_record=data.consent or {"granted": True, "timestamp": datetime.now().isoformat()}
+        consent_record=data.consent or {"granted": True, "timestamp": datetime.now().isoformat()},
+        assigned_doctor_id=data.assigned_doctor_id or "",
+        assigned_doctor_name=data.assigned_doctor_name or "",
+        assigned_doctor_specialty=data.assigned_doctor_specialty or ""
     )
 
+    doctor_note = f" You are consulting with {data.assigned_doctor_name} ({data.assigned_doctor_specialty})." if data.assigned_doctor_name else ""
     welcome_text = (
-        f"Hello {patient['name']}. Your permanent token is {token}. "
+        f"Hello {patient['name']}. Your permanent token is {token}.{doctor_note} "
         "Please describe what symptoms you are experiencing today."
     )
     await save_session_message(session["id"], "assistant", welcome_text)
@@ -376,7 +405,250 @@ async def submit_intake(data: IntakeSubmitRequest):
     }
 
 
-# ─── 3. Doctor Console Endpoints (DOCTOR AUTH REQUIRED) ────────
+# ─── 3. Doctor Auth & Dynamic Registry Endpoints ────────────────
+
+@app.get("/api/doctors")
+async def get_available_doctors():
+    """List all registered doctors available for patient selection (No hardcoded doctors)."""
+    doctors = await list_available_doctors()
+    return {
+        "doctors": [
+            {
+                "id": d["id"],
+                "name": d["name"],
+                "specialty": d.get("specialty") or "General Medicine / OPD",
+                "email": d["email"],
+                "profile_completed": bool(d.get("profile_completed", 0))
+            }
+            for d in doctors
+        ]
+    }
+
+
+@app.post("/api/doctors/register")
+async def register_doctor(data: DoctorRegisterRequest):
+    """Register a new doctor account with email & password. No email verification link required!"""
+    clean_email = data.email.strip().lower()
+    if not clean_email or not data.password.strip():
+        raise HTTPException(status_code=400, detail="Email and password are required.")
+
+    existing = await get_doctor_by_email(clean_email)
+    if existing:
+        raise HTTPException(status_code=400, detail="A doctor account with this email already exists. Please sign in.")
+
+    has_profile = bool(data.name and data.name.strip() and data.specialty and data.specialty.strip())
+    doctor = await create_doctor(
+        email=clean_email,
+        password_hash=data.password.strip(),
+        name=data.name or "",
+        specialty=data.specialty or "",
+        auth_provider="email",
+        profile_completed=1 if has_profile else 0
+    )
+
+    return {
+        "status": "success",
+        "message": "Doctor registered successfully.",
+        "doctor": {
+            "id": doctor["id"],
+            "email": doctor["email"],
+            "name": doctor["name"],
+            "specialty": doctor.get("specialty", ""),
+            "role": "doctor",
+            "profile_completed": bool(doctor.get("profile_completed", 0))
+        }
+    }
+
+
+@app.post("/api/doctors/login")
+async def login_doctor(data: DoctorLoginRequest):
+    """Login doctor with email & password. Immediately authenticated."""
+    clean_email = data.email.strip().lower()
+    doctor = await get_doctor_by_email(clean_email)
+    if not doctor:
+        raise HTTPException(status_code=401, detail="No doctor account found with this email. Please register first.")
+
+    # Validate password
+    if doctor.get("password_hash") and doctor["password_hash"] != data.password.strip():
+        raise HTTPException(status_code=401, detail="Invalid password. Please check your credentials.")
+
+    return {
+        "status": "success",
+        "doctor": {
+            "id": doctor["id"],
+            "email": doctor["email"],
+            "name": doctor["name"],
+            "specialty": doctor.get("specialty") or "General Medicine / OPD",
+            "role": "doctor",
+            "profile_completed": bool(doctor.get("profile_completed", 0))
+        }
+    }
+
+
+@app.post("/api/doctors/sync-google")
+async def sync_google_doctor(data: DoctorGoogleSyncRequest):
+    """Sync or register doctor logging in via Google OAuth."""
+    clean_email = data.email.strip().lower()
+    doctor = await get_doctor_by_email(clean_email)
+    if not doctor:
+        clean_name = data.name.strip() if data.name else f"Dr. {clean_email.split('@')[0]}"
+        doctor = await create_doctor(
+            email=clean_email,
+            password_hash="",
+            name=clean_name,
+            specialty="",
+            auth_provider="google",
+            profile_completed=0,
+            doctor_id=data.google_id
+        )
+
+    return {
+        "status": "success",
+        "doctor": {
+            "id": doctor["id"],
+            "email": doctor["email"],
+            "name": doctor["name"],
+            "specialty": doctor.get("specialty") or "",
+            "role": "doctor",
+            "profile_completed": bool(doctor.get("profile_completed", 0))
+        }
+    }
+
+
+@app.post("/api/doctors/profile")
+async def update_doctor_profile_endpoint(
+    data: DoctorProfileUpdateRequest,
+    doctor_auth: Dict[str, str] = Depends(require_doctor_role)
+):
+    """Update doctor profile (Name and Field/Specialization) after first login."""
+    if not data.name.strip() or not data.specialty.strip():
+        raise HTTPException(status_code=400, detail="Name and field/specialization are required.")
+
+    updated = await update_doctor_profile(
+        doctor_id=data.doctor_id,
+        name=data.name,
+        specialty=data.specialty
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Doctor record not found.")
+
+    return {
+        "status": "success",
+        "doctor": {
+            "id": updated["id"],
+            "email": updated["email"],
+            "name": updated["name"],
+            "specialty": updated["specialty"],
+            "role": "doctor",
+            "profile_completed": True
+        }
+    }
+
+
+# ─── 4. Concise Clinical Summary Synthesizer ───────────────────
+
+def synthesize_concise_summaries(session, patient, messages, documents, patient_history):
+    """Synthesize the 3 primary concise summaries required by attending physicians."""
+    hpi = session.get("socrates_hpi", {}) or {}
+    red_flag = session.get("red_flag_alert", {}) or {}
+
+    # 1. Current Query Summary
+    chief_complaint = hpi.get("chief_complaint") or "General Outpatient Consultation"
+    onset = hpi.get("onset") or "Not specified"
+    severity = hpi.get("severity") or "N/A"
+    site = hpi.get("site") or "Not specified"
+    character = hpi.get("character") or "Not specified"
+    radiation = hpi.get("radiation") or "None"
+    timing = hpi.get("timing") or "Constant"
+    assoc = ", ".join(hpi.get("associations", [])) if isinstance(hpi.get("associations"), list) else (hpi.get("associations") or "None reported")
+
+    current_query_summary = {
+        "chief_complaint": chief_complaint,
+        "site": site,
+        "onset": onset,
+        "character": character,
+        "severity": f"{severity}/10" if str(severity).isdigit() else str(severity),
+        "radiation": radiation,
+        "timing": timing,
+        "associations": assoc,
+        "is_urgent": bool(red_flag.get("is_critical", False)),
+        "triage_reason": red_flag.get("reason", ""),
+        "assigned_doctor_name": session.get("assigned_doctor_name", ""),
+        "assigned_doctor_specialty": session.get("assigned_doctor_specialty", ""),
+        "text_overview": f"Patient presents with {chief_complaint}. Onset: {onset}, Severity: {severity}/10. Characteristics: {character} located at {site}. Associated symptoms: {assoc}."
+    }
+
+    # 2. Patient History Summary
+    prev_visits = patient_history.get("previous_consultations", []) if patient_history else []
+    conditions = patient.get("conditions", []) if patient else []
+    chronic_meds = patient_history.get("cumulative_active_medications", []) if patient_history else []
+    allergies = patient.get("allergies", []) if patient else []
+
+    if prev_visits:
+        recent_dx = [v.get("diagnosis") for v in prev_visits[:3] if v.get("diagnosis")]
+        history_text = f"Returning patient with {len(prev_visits)} prior consultations recorded on this token."
+        if recent_dx:
+            history_text += f" Recent diagnoses: {', '.join(recent_dx)}."
+        if conditions:
+            history_text += f" Known chronic conditions: {', '.join(conditions) if isinstance(conditions, list) else conditions}."
+        if allergies:
+            history_text += f" Known allergies: {', '.join(allergies) if isinstance(allergies, list) else allergies}."
+    else:
+        history_text = "First-time patient check-in at MediKiosk. No prior hospital consultation records on this token."
+        if conditions:
+            history_text += f" Patient reports existing conditions: {', '.join(conditions) if isinstance(conditions, list) else conditions}."
+        if allergies:
+            history_text += f" Reported allergies: {', '.join(allergies) if isinstance(allergies, list) else allergies}."
+
+    patient_history_summary = {
+        "is_returning": bool(prev_visits),
+        "total_prior_visits": len(prev_visits),
+        "known_conditions": conditions,
+        "allergies": allergies,
+        "active_medications": chronic_meds,
+        "text_overview": history_text
+    }
+
+    # 3. Uploaded Documents Summary
+    docs_summary_list = []
+    abnormal_labs = []
+    extracted_rx = []
+    for doc in documents:
+        ent = doc.get("extracted_entities", {}) or {}
+        if ent.get("lab_results"):
+            for lr in ent["lab_results"]:
+                if lr.get("is_abnormal"):
+                    abnormal_labs.append(f"{lr.get('test_name')}: {lr.get('value')} {lr.get('unit')} ({lr.get('flag', 'HIGH')})")
+        if ent.get("medications"):
+            for m in ent["medications"]:
+                extracted_rx.append(f"{m.get('name')} {m.get('dosage', '')}")
+        docs_summary_list.append({
+            "file_name": doc.get("file_name"),
+            "doc_type": doc.get("doc_type"),
+            "summary": ent.get("summary") or doc.get("doc_type", "Medical Document")
+        })
+
+    if documents:
+        docs_text = f"{len(documents)} external medical documents uploaded for this visit."
+        if abnormal_labs:
+            docs_text += f" Critical Lab Findings: {'; '.join(abnormal_labs)}."
+        if extracted_rx:
+            docs_text += f" Prescriptions noted: {', '.join(extracted_rx[:4])}."
+    else:
+        docs_text = "No external medical reports or scanned documents uploaded for this visit."
+
+    uploaded_documents_summary = {
+        "total_documents": len(documents),
+        "abnormal_labs": abnormal_labs,
+        "extracted_medications": extracted_rx,
+        "documents_list": docs_summary_list,
+        "text_overview": docs_text
+    }
+
+    return current_query_summary, patient_history_summary, uploaded_documents_summary
+
+
+# ─── 5. Doctor Console Endpoints (DOCTOR AUTH REQUIRED) ────────
 
 @app.get("/api/physician/queue")
 async def get_physician_queue(
@@ -393,7 +665,7 @@ async def get_physician_session_detail(
     session_id: int,
     doctor: Dict[str, str] = Depends(require_doctor_role)
 ):
-    """Retrieve full intake packet along with complete longitudinal patient history (Strictly Doctor Protected)."""
+    """Retrieve full intake packet with 3 primary concise summaries and expandable chat (Strictly Doctor Protected)."""
     session = await get_intake_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -411,6 +683,15 @@ async def get_physician_session_detail(
         current_session_id=session_id
     )
 
+    # Synthesize the 3 primary concise clinical summaries
+    q_sum, h_sum, d_sum = synthesize_concise_summaries(
+        session=session,
+        patient=patient or {},
+        messages=messages or [],
+        documents=documents or [],
+        patient_history=patient_history or {}
+    )
+
     return {
         "session": session,
         "patient": patient,
@@ -418,7 +699,10 @@ async def get_physician_session_detail(
         "documents": documents,
         "audit_logs": audit_logs,
         "security_alerts": security_alerts,
-        "patient_history": patient_history
+        "patient_history": patient_history,
+        "current_query_summary": q_sum,
+        "patient_history_summary": h_sum,
+        "uploaded_documents_summary": d_sum
     }
 
 

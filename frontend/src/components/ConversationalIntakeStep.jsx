@@ -183,7 +183,8 @@ export default function ConversationalIntakeStep({
             onClick={() => handleSend()}
             disabled={!inputText.trim() || isLoading}
           >
-            Send →
+            {isLoading && <span className="btn-spinner"></span>}
+            {isLoading ? 'Processing...' : 'Send →'}
           </button>
         </div>
 
@@ -192,7 +193,7 @@ export default function ConversationalIntakeStep({
           <p className="kiosk-hint">
             Done answering? You can upload past prescriptions or test reports next.
           </p>
-          <button type="button" className="btn-kiosk-primary" onClick={onProceedToDocs}>
+          <button type="button" className="btn-kiosk-primary" onClick={onProceedToDocs} disabled={isLoading}>
             Continue to Document Upload (Step 3) →
           </button>
         </div>

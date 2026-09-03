@@ -40,6 +40,12 @@ export default function KioskSummaryStep({
               <div className="token-bound-sub">Patient ID: <strong>{patientToken}</strong></div>
             )}
             
+            {session?.assigned_doctor_name && (
+              <div className="token-bound-sub" style={{ marginTop: '4px', color: '#1e40af' }}>
+                Consulting: <strong>{session.assigned_doctor_name}</strong> {session.assigned_doctor_specialty ? `(${session.assigned_doctor_specialty})` : ''}
+              </div>
+            )}
+
             {redFlag?.is_critical && (
               <div className="emergency-token-badge">
                 Priority Status: Emergency Triage
@@ -111,6 +117,9 @@ export default function KioskSummaryStep({
               <div><strong>Age & Gender:</strong> {patient?.age ? `${patient.age} yrs` : '—'} / {patient?.gender || '—'}</div>
               <div><strong>Phone:</strong> {patient?.phone || 'Not provided'}</div>
               <div><strong>Token ID:</strong> {patientToken || '—'}</div>
+              {session?.assigned_doctor_name && (
+                <div><strong>Attending Doctor:</strong> <strong>{session.assigned_doctor_name}</strong> {session.assigned_doctor_specialty ? `(${session.assigned_doctor_specialty})` : ''}</div>
+              )}
               <div><strong>ABHA ID:</strong> {patient?.abha_id || 'Not linked'}</div>
             </div>
           </div>
@@ -150,6 +159,7 @@ export default function KioskSummaryStep({
             onClick={handleSubmit}
             disabled={isLoading}
           >
+            {isLoading && <span className="btn-spinner"></span>}
             {isLoading ? 'Submitting Check-In...' : '✓ Confirm & Get Queue Token'}
           </button>
         </div>

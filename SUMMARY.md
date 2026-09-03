@@ -93,9 +93,59 @@ Once a patient checks in or enters their token, an ATM-style session bar is rend
 
 ---
 
-## 5. Doctor Dashboard & OPD Management System
+---
 
-The **Physician Console** has been completely upgraded into a modern, professional, bank/healthcare-kiosk-styled dashboard tailored for fast, clear outpatient workflow management:
+## 5. Doctor Selection & Patient Intake Flow
+
+```
+[Main Entry]
+     │
+     ▼
+[Patient Token Entry] ──(New / Returning)──► [Doctor Selection Step]
+                                                      │
+                                                      ▼
+                                              [Step 1: Patient Information]
+                                                      │
+                                                      ▼
+                                              [Step 2: Symptoms & Chat]
+                                                      │
+                                                      ▼
+                                              [Step 3: Past Records (Optional)]
+                                                      │
+                                                      ▼
+                                              [Step 4: Confirmation & Queue Ticket]
+```
+
+### Dynamic Doctor Selection Step
+* Immediately after receiving or verifying a token, patients are presented with a dedicated **"Select Your Attending Doctor"** screen.
+* Available doctors are dynamically populated from active hospital doctor accounts (`GET /api/doctors`).
+* Doctor cards display the physician's full name, medical field/specialization, and OPD availability.
+* The selected doctor is saved against the patient's token and intake session (`assigned_doctor_id`, `assigned_doctor_name`, `assigned_doctor_specialty`).
+* Displayed clearly in Step 1 (Attending Doctor banner), Step 4 review table, and on the ATM queue ticket receipt.
+
+---
+
+## 6. Doctor Authentication & Profile Setup
+
+### Direct Authentication (Zero Email Verification Required)
+* Doctors can sign up and log in immediately without opening an external email inbox or clicking verification links.
+* **Direct Signup & Login**: Handled via backend endpoints `POST /api/doctors/register` and `POST /api/doctors/login` with BCrypt password hashing.
+* **Google OAuth**: Supported with automatic backend sync via `POST /api/doctors/sync-google`.
+* Protected endpoints enforce role-based access control (`X-User-Role: doctor`).
+
+### First-Time Doctor Profile Setup
+* When a newly registered doctor logs in for the first time, a clean profile setup screen is presented if `profile_completed` is `false`.
+* Collects:
+  * **Doctor's Full Name** (e.g., `Dr. Rohan Vernekar`)
+  * **Field / Specialization** (e.g., `Cardiology`, `General Medicine / OPD`, `Pediatrics`)
+* Profile is committed to the database via `POST /api/doctors/profile` and `profile_completed` is marked `true`.
+* Subsequent logins bypass this screen and navigate directly into the Physician Review Console.
+
+---
+
+## 7. Doctor Dashboard & OPD Management System
+
+The **Physician Console** has been upgraded into a modern, professional, bank/healthcare-kiosk-styled dashboard tailored for fast, clear outpatient workflow management:
 
 ### At-a-Glance Dashboard Metrics Banner
 Positioned persistently across the top of the dashboard, displaying real-time OPD workload counts:
@@ -107,62 +157,68 @@ Positioned persistently across the top of the dashboard, displaying real-time OP
 
 ### Two-Section OPD Navigation (Ongoing vs. Completed)
 The left navigation sidebar is divided into two distinct sections via a segmented toggle bar based on the clinical verification lifecycle:
-1. **Ongoing (`N`)**:
-   * **Active Queue**: Shows patients who have **submitted their OPD forms** at the kiosk but have **not yet been verified by the doctor**.
-   * **Useful Card Information**:
-     * Patient Name
-     * OPD Queue Ticket (`MK-XXXX`)
-     * Permanent Patient Token ID (`PT-XXXX-YY`)
-     * Demographics & Department (`Age`, `Gender`, `General OPD` / `AYUSH`)
-     * **Submission Time**: e.g. `🕒 Submitted: 10:45 AM`
-     * Status indicator: `⏳ AWAITING VERIFICATION`, `🩺 IN EXAMINATION`, `⚡ PRIORITY`.
-   * **Examination & Review Workflow**:
-     * Doctor can review the AI clinical intake summary (with optional draft editing).
-     * Action "▶ Start Examination" transitions the patient to active consultation (`🩺 In Examination`).
-     * Attending Physician Consultation form allows entering Working / Final Diagnosis, Prescriptions with dynamic `+ Add Medicine` table, Doctor Notes & Advice, and Recommended Follow-up.
-     * High-visibility **"✓ Verify & Complete Consultation"** button validates details, synchronizes records, and **automatically moves the patient from Ongoing to Completed**.
-2. **Completed (`M`)**:
-   * **Read-Only Records & Medical History**: Shows OPD instances that have already been **verified by the doctor**.
-   * **Strictly Read-Only Interface**:
-     * Serves as a clinical summary and patient consultation history.
-     * Displays `✓ Verified & Completed` status pill and verified timestamp with attending physician credentials.
-     * **Verified Working / Final Diagnosis** presented in a clean, highlighted read-only box.
-     * **Verified Prescriptions & Medications** displayed in a structured read-only table (Medicine Name, Dosage, Frequency, Duration) with no edit or delete buttons.
-     * **Doctor Notes & Advice** and **Recommended Follow-up** rendered in clear read-only blocks.
-     * Sealed with a **`🔒 Read-Only Record`** footer banner confirming that the record is locked in the hospital database and cannot be accidentally modified or re-verified.
-* **Instant Search & Filter Bar**:
-   * Real-time search across active queue by Patient Name, Token ID (`PT-...`), Queue Ticket (`MK-...`), or chief complaint.
-   * Department filter pills: `All`, `General OPD`, `AYUSH Clinic`, and `Priority Triage`.
-   * Clear contextual empty states with informative copy when all submissions are reviewed.
+1. **Ongoing**:
+   * Shows patients who have submitted their OPD forms at the kiosk but have not yet been verified.
+   * Cards display Ticket Number, Patient Name, Permanent Token ID, Submission Timestamp, and status pills.
+2. **Completed**:
+   * Shows OPD instances that have already been verified by the doctor.
+   * Sealed in **strict read-only format** with `🔒 Consultation finalized & verified` banner.
 
-### The Key Workflow Lifecycle
-```
-Patient submits form at Kiosk → Ongoing Queue (Awaiting Verification) → Doctor reviews & starts exam → Doctor verifies consultation → Completed Queue (Read-Only Summary & Medical History)
-```
+### 3 Concise Primary Summaries (Replaced Raw Chat View)
+The primary packet view for attending doctors presents 3 high-priority clinical summaries:
+1. **Current Query Summary (Most Prominent)**:
+   * AI clinical summary of chief complaint, onset, pain/severity, location, timing, and associated symptoms.
+   * Clear tag showing assigned doctor and department.
+2. **Patient History Summary**:
+   * Longitudinal background: chronic conditions, active medications, known drug allergies (NKDA), and count of prior visits.
+3. **Uploaded Documents Summary**:
+   * Document count, abnormal lab flags highlighted in amber, and extracted medications.
 
-### Longitudinal Patient History & FHIR Records
-* **Returning Patient Detection**: Automatically links returning patient tokens with prior visit history, past prescriptions, prior abnormal lab tests, and previous physician notes.
-* **FHIR R4 Composition**: Validates and previews FHIR R4 JSON bundles for ABDM interoperability.
-
-### Full Mobile & Tablet Responsiveness
-* Dedicated mobile view switcher (`📋 OPD Queue` / `🩺 Patient Details`) allowing seamless one-tap switching on phones and small tablets.
-* Zero horizontal scrolling, touch-optimized card targets, and automatic collapsible tables.
+### Secondary Expandable Chat History
+* The raw conversational interview is no longer the primary view.
+* Structured as a collapsible accordion: **`▸ View Current Conversation ({N} messages)`**.
+* Defaulted to collapsed; smoothly toggles open for deep audit when needed.
 
 ---
 
-## 6. Backend API Endpoints (Physician Management)
+## 8. Global Loading State Standard
 
-* `GET /api/physician/queue`: Retrieves all OPD intake sessions with patient info, department, urgency, and clinical packet summaries.
-* `POST /api/physician/update-status`: Allows physician to update session status (`waiting`, `in_consultation`, `urgent_triage`, `completed`) with audit logging.
-* `POST /api/physician/confirm`: Saves doctor disposition, working diagnosis, structured prescriptions, clinical advice, follow-up, and updates session status to `completed`.
-* `POST /api/physician/export-fhir`: Exports clinical intake bundle into compliant FHIR R4 JSON.
+To prevent duplicate requests and provide clear tactile feedback:
+* Every button triggering a backend operation disables immediately upon click.
+* Displays a compact, professional `.btn-spinner` and dynamic loading label:
+  * `Checking Token...` / `Generating Patient Token...`
+  * `Assigning Doctor...`
+  * `Starting Intake Session...`
+  * `Processing...`
+  * `Submitting Check-In...`
+  * `Signing In...` / `Creating Doctor Account...`
+  * `Saving Profile...`
+  * `Verifying Consultation...`
+  * `Loading FHIR...`
+* Buttons re-enable automatically upon request resolution, with proper error handling and retry support.
 
 ---
 
-## 7. Technical Stack
+## 9. Backend API Endpoints
+
+* `GET /api/doctors`: Retrieves active doctors for patient selection.
+* `POST /api/doctors/register`: Registers a doctor with email, password, name, and specialty without email verification.
+* `POST /api/doctors/login`: Authenticates doctor with email and password.
+* `POST /api/doctors/profile`: Updates doctor profile (name & specialty) after first login.
+* `POST /api/doctors/sync-google`: Syncs doctor Google OAuth session with backend doctors table.
+* `POST /api/intake/start`: Initializes intake session with assigned doctor metadata.
+* `GET /api/physician/queue`: Retrieves all OPD intake sessions with department and urgency filters.
+* `GET /api/physician/session/{id}`: Returns full session packet including 3 synthesized concise summaries.
+* `POST /api/physician/confirm`: Verifies diagnosis, prescriptions, and moves session from Ongoing to Completed.
+* `GET /api/physician/fhir/{id}`: Exports clinical intake bundle into compliant FHIR R4 JSON.
+
+---
+
+## 10. Technical Stack
 
 * **Frontend**: React 18, Vite, Vanilla CSS Design System with custom design tokens, Google Fonts (`Inter` & `Plus Jakarta Sans`).
 * **Backend**: FastAPI (Python 3.10+), SQLite Database with JSON serialization, Google Gemini multi-modal AI APIs.
-* **Authentication**: Supabase Auth (Google OAuth & Email/Password) with secure role verification (`require_doctor_role`) and offline local staff fallback.
+* **Authentication**: Direct Email/Password authentication & Supabase Google OAuth with role verification (`require_doctor_role`).
 * **State & Persistence**: Browser LocalStorage session preservation across refreshes with real-time optimistic UI updates.
+
 

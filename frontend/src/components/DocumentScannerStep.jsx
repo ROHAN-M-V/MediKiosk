@@ -184,8 +184,10 @@ export default function DocumentScannerStep({
             type="button"
             className="btn-kiosk-primary"
             onClick={onProceedToSummary}
+            disabled={isLoading}
           >
-            {documents.length === 0 ? 'Skip to Confirmation (Step 4) →' : 'Continue to Confirmation (Step 4) →'}
+            {isLoading && <span className="btn-spinner"></span>}
+            {isLoading ? 'Processing Document...' : (documents.length === 0 ? 'Skip to Confirmation (Step 4) →' : 'Continue to Confirmation (Step 4) →')}
           </button>
         </div>
       </div>

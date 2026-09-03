@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 export default function IdentityConsentStep({
   patientToken,
   initialPatientData,
+  selectedDoctor,
   onStartIntake,
   loading
 }) {
@@ -78,6 +79,23 @@ export default function IdentityConsentStep({
               <strong className="bound-token">{patientToken}</strong>
             </div>
           )}
+
+          {selectedDoctor && (
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '10px 14px', margin: '12px 0 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <span style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 800, color: '#1e40af', letterSpacing: '0.5px' }}>
+                  Attending Doctor:
+                </span>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f2438' }}>
+                  {selectedDoctor.name}
+                </div>
+              </div>
+              <span style={{ fontSize: '12.5px', color: '#2563eb', fontWeight: 600, background: '#ffffff', padding: '3px 10px', borderRadius: '4px', border: '1px solid #bfdbfe' }}>
+                {selectedDoctor.specialty || 'General Medicine / OPD'}
+              </span>
+            </div>
+          )}
+
           <h2>Step 1: Patient Information</h2>
           <p className="card-subtitle">
             {initialPatientData?.isReturning
@@ -254,7 +272,8 @@ export default function IdentityConsentStep({
                   className="btn-kiosk-primary btn-start-intake"
                   disabled={loading || !consentGranted}
                 >
-                  {loading ? 'Preparing Session...' : 'Continue to Questions (Step 2) →'}
+                  {loading && <span className="btn-spinner"></span>}
+                  {loading ? 'Starting Intake Session...' : 'Continue to Questions (Step 2) →'}
                 </button>
               </div>
             </div>

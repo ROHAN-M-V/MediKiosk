@@ -117,7 +117,22 @@ async def init_db():
             )
         """)
 
-        # Auto-migration helpers for patient_token column
+        # 6. Doctors Table for Dynamic Doctor Accounts & Profiles
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS doctors (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT DEFAULT '',
+                name TEXT NOT NULL,
+                specialty TEXT DEFAULT '',
+                auth_provider TEXT DEFAULT 'email', -- 'email' | 'google'
+                profile_completed INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Auto-migration helpers for patient_token & assigned doctor columns
         try:
             await db.execute("ALTER TABLE patients ADD COLUMN patient_token TEXT")
         except Exception:
@@ -127,12 +142,40 @@ async def init_db():
         except Exception:
             pass
         try:
+            await db.execute("ALTER TABLE intake_sessions ADD COLUMN assigned_doctor_id TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE intake_sessions ADD COLUMN assigned_doctor_name TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE intake_sessions ADD COLUMN assigned_doctor_specialty TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
             await db.execute("ALTER TABLE audit_logs ADD COLUMN patient_token TEXT")
         except Exception:
             pass
 
+        # Seed default test doctor if not already present
+        cursor = await db.execute("SELECT id FROM doctors WHERE email = ?", ("25ece1055@nitgoa.ac.in",))
+        if not await cursor.fetchone():
+            await db.execute("""
+                INSERT INTO doctors (id, email, password_hash, name, specialty, auth_provider, profile_completed)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "doc_25ece1055",
+                "25ece1055@nitgoa.ac.in",
+                "123456789",
+                "Dr. Rohan Vernekar",
+                "General Medicine / OPD",
+                "email",
+                1
+            ))
+
         await db.commit()
-    print("[DB] MediKiosk Database initialized with Token Authentication & Security Logging")
+    print("[DB] MediKiosk Database initialized with Token Auth, Doctors Registry & Security Logging")
 
 
 # ΓöÇΓöÇΓöÇ Patient Token CRUD & Verification ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -213,18 +256,23 @@ async def create_intake_session(
     user_id: str = "token_user",
     department: str = "allopathic",
     language: str = "en",
-    consent_record: Optional[Dict] = None
+    consent_record: Optional[Dict] = None,
+    assigned_doctor_id: str = "",
+    assigned_doctor_name: str = "",
+    assigned_doctor_specialty: str = ""
 ) -> Dict[str, Any]:
-    """Start a new clinical intake session linked to the patient token."""
+    """Start a new clinical intake session linked to the patient token and assigned doctor."""
     queue_number = f"MK-{random.randint(1001, 9999)}"
     session_token = f"sess_{datetime.now().strftime('%Y%m%d%H%M%S')}_{random.randint(100, 999)}"
 
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """INSERT INTO intake_sessions
-               (session_token, patient_token, queue_number, patient_id, user_id, department, language, consent_record, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_progress')""",
-            (session_token, patient_token, queue_number, patient_id, user_id, department, language, json.dumps(consent_record or {}))
+               (session_token, patient_token, queue_number, patient_id, user_id, department, language, consent_record, status,
+                assigned_doctor_id, assigned_doctor_name, assigned_doctor_specialty)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, ?, ?)""",
+            (session_token, patient_token, queue_number, patient_id, user_id, department, language, json.dumps(consent_record or {}),
+             assigned_doctor_id, assigned_doctor_name, assigned_doctor_specialty)
         )
         await db.commit()
         sid = cursor.lastrowid
@@ -234,7 +282,7 @@ async def create_intake_session(
         patient_token=patient_token,
         actor_role="patient",
         action="INTAKE_STARTED",
-        details={"queue_number": queue_number, "language": language}
+        details={"queue_number": queue_number, "language": language, "assigned_doctor": assigned_doctor_name}
     )
     return await get_intake_session(sid)
 
@@ -269,8 +317,12 @@ async def get_intake_session(session_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def update_intake_session(session_id: int, **kwargs) -> Optional[Dict[str, Any]]:
-    """Update intake session status, SOCRATES data, summary, or doctor review."""
-    allowed = {"status", "department", "language", "consent_record", "red_flag_alert", "socrates_hpi", "structured_summary", "clinician_disposition", "fhir_bundle"}
+    """Update intake session status, SOCRATES data, summary, assigned doctor, or doctor review."""
+    allowed = {
+        "status", "department", "language", "consent_record", "red_flag_alert",
+        "socrates_hpi", "structured_summary", "clinician_disposition", "fhir_bundle",
+        "assigned_doctor_id", "assigned_doctor_name", "assigned_doctor_specialty"
+    }
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return await get_intake_session(session_id)
@@ -768,3 +820,80 @@ def _row_to_dict(row: aiosqlite.Row) -> Dict[str, Any]:
             except Exception:
                 d[field] = []
     return d
+
+
+# ─── Doctor Management ───────────────────────────────────────
+
+async def get_doctor_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Retrieve doctor account by email address."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM doctors WHERE email = ?", (email.strip().lower(),))
+        row = await cursor.fetchone()
+        return _row_to_dict(row) if row else None
+
+
+async def get_doctor_by_id(doctor_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve doctor account by unique doctor ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM doctors WHERE id = ?", (doctor_id,))
+        row = await cursor.fetchone()
+        return _row_to_dict(row) if row else None
+
+
+async def create_doctor(
+    email: str,
+    password_hash: str = "",
+    name: str = "",
+    specialty: str = "",
+    auth_provider: str = "email",
+    profile_completed: int = 0,
+    doctor_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create a new doctor account in the database."""
+    doc_id = doctor_id or f"doc_{int(datetime.now().timestamp())}_{random.randint(100, 999)}"
+    clean_email = email.strip().lower()
+    clean_name = name.strip() or f"Dr. {clean_email.split('@')[0]}"
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO doctors (id, email, password_hash, name, specialty, auth_provider, profile_completed)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (doc_id, clean_email, password_hash, clean_name, specialty.strip(), auth_provider, profile_completed))
+        await db.commit()
+    return await get_doctor_by_id(doc_id)
+
+
+async def update_doctor_profile(
+    doctor_id: str,
+    name: str,
+    specialty: str
+) -> Optional[Dict[str, Any]]:
+    """Update doctor's full name, field/specialization, and mark profile as completed."""
+    clean_name = name.strip()
+    if not clean_name.lower().startswith("dr.") and not clean_name.lower().startswith("dr "):
+        clean_name = f"Dr. {clean_name}"
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE doctors
+            SET name = ?, specialty = ?, profile_completed = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (clean_name, specialty.strip(), doctor_id))
+        await db.commit()
+    return await get_doctor_by_id(doctor_id)
+
+
+async def list_available_doctors() -> List[Dict[str, Any]]:
+    """List all registered doctors available for patient OPD selection."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("""
+            SELECT id, email, name, specialty, profile_completed, created_at
+            FROM doctors
+            ORDER BY created_at ASC
+        """)
+        rows = await cursor.fetchall()
+        return [_row_to_dict(r) for r in rows]
+
