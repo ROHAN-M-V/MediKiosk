@@ -4,10 +4,14 @@ export default function IdentityConsentStep({
   patientToken,
   initialPatientData,
   selectedDoctor,
-  onStartIntake,
+  formData: propFormData,
+  onFormDataChange,
+  onNext,
+  onBack,
+  hasSession,
   loading
 }) {
-  const [formData, setFormData] = useState({
+  const [localFormData, setLocalFormData] = useState({
     name: initialPatientData?.name || '',
     age: initialPatientData?.age ? String(initialPatientData.age) : '',
     gender: initialPatientData?.gender || 'Male',
@@ -16,14 +20,20 @@ export default function IdentityConsentStep({
     department: 'allopathic'
   })
 
+  const formData = propFormData || localFormData
+
   useEffect(() => {
-    if (initialPatientData) {
-      setFormData(prev => ({
-        ...prev,
-        name: initialPatientData.name || prev.name,
-        age: initialPatientData.age ? String(initialPatientData.age) : prev.age,
-        gender: initialPatientData.gender || prev.gender
-      }))
+    if (initialPatientData && !formData.name) {
+      const updated = {
+        name: initialPatientData.name || '',
+        age: initialPatientData.age ? String(initialPatientData.age) : '',
+        gender: initialPatientData.gender || 'Male'
+      }
+      if (onFormDataChange) {
+        onFormDataChange(prev => ({ ...prev, ...updated }))
+      } else {
+        setLocalFormData(prev => ({ ...prev, ...updated }))
+      }
     }
   }, [initialPatientData])
 
@@ -31,23 +41,32 @@ export default function IdentityConsentStep({
   const [errorMsg, setErrorMsg] = useState('')
 
   function handleChange(e) {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }))
+    const { name, value } = e.target
+    if (onFormDataChange) {
+      onFormDataChange(prev => ({
+        ...prev,
+        [name]: value
+      }))
+    } else {
+      setLocalFormData(prev => ({
+        ...prev,
+        [name]: value
+      }))
+    }
   }
 
   function handleSubmit(e) {
     e.preventDefault()
     setErrorMsg('')
 
-    if (!formData.name.trim()) {
+    if (!formData.name?.trim()) {
       setErrorMsg('Please enter the patient full name.')
       return
     }
 
-    if (!formData.age) {
-      setErrorMsg('Please enter the patient age.')
+    const ageNum = parseInt(formData.age, 10)
+    if (!formData.age || isNaN(ageNum) || ageNum <= 0 || ageNum > 125) {
+      setErrorMsg('Please enter a valid age between 1 and 125.')
       return
     }
 
@@ -56,10 +75,10 @@ export default function IdentityConsentStep({
       return
     }
 
-    onStartIntake({
+    onNext({
       patient_token: patientToken,
       ...formData,
-      age: parseInt(formData.age, 10),
+      age: ageNum,
       consent: {
         granted: true,
         purpose: 'Outpatient Triage & Clinical Intake',
@@ -266,14 +285,22 @@ export default function IdentityConsentStep({
                 </label>
               </div>
 
-              <div className="checkin-actions-row">
+              <div className="kiosk-nav-row">
+                <button
+                  type="button"
+                  className="btn-kiosk-nav btn-kiosk-back"
+                  onClick={onBack}
+                  disabled={loading}
+                >
+                  ← Back: Select Doctor
+                </button>
                 <button
                   type="submit"
-                  className="btn-kiosk-primary btn-start-intake"
+                  className="btn-kiosk-nav btn-kiosk-next"
                   disabled={loading || !consentGranted}
                 >
                   {loading && <span className="btn-spinner"></span>}
-                  {loading ? 'Starting Intake Session...' : 'Continue to Questions (Step 2) →'}
+                  {loading ? 'Starting Intake...' : 'Next: Symptoms & Query →'}
                 </button>
               </div>
             </div>

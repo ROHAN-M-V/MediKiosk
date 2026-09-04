@@ -342,20 +342,39 @@ async def update_intake_session(session_id: int, **kwargs) -> Optional[Dict[str,
     return await get_intake_session(session_id)
 
 
-async def list_physician_queue(department: Optional[str] = None) -> List[Dict[str, Any]]:
-    """List all intake sessions for the Doctor Dashboard with token, returning patient flag, and security alerts."""
+async def list_physician_queue(
+    department: Optional[str] = None,
+    doctor_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """List intake sessions assigned to the authenticated doctor, with token, returning patient flag, and security alerts."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        query = """
+        
+        conditions = []
+        params = []
+        
+        if doctor_id:
+            # Strict doctor-patient access control: return only sessions assigned to this specific doctor
+            conditions.append("s.assigned_doctor_id = ?")
+            params.append(doctor_id)
+            
+        if department:
+            conditions.append("s.department = ?")
+            params.append(department)
+            
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        
+        query = f"""
             SELECT s.*, p.name as patient_name, p.age as patient_age, p.gender as patient_gender,
                    p.phone as patient_phone, p.abha_id as patient_abha, p.patient_token
             FROM intake_sessions s
             JOIN patients p ON s.patient_id = p.id
+            {where_clause}
             ORDER BY
                 CASE WHEN json_extract(s.red_flag_alert, '$.is_critical') = 1 THEN 0 ELSE 1 END,
                 s.updated_at DESC
         """
-        cursor = await db.execute(query)
+        cursor = await db.execute(query, tuple(params))
         rows = await cursor.fetchall()
         result = []
         for r in rows:
@@ -394,21 +413,31 @@ async def list_physician_queue(department: Optional[str] = None) -> List[Dict[st
 # ─── Longitudinal Patient Medical History ──────────────────────
 
 async def get_patient_complete_medical_history(
-    patient_token: str,
+    patient_token: Optional[str] = None,
     current_session_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Retrieve comprehensive longitudinal medical history for a patient token.
-    Compiles:
-    - Previous visits and consultation dates
-    - Past diagnoses and chronic medical conditions
+    Synthesize complete longitudinal patient medical history tied to their permanent Token ID:
+    - Chronological previous consultation visits & verified summaries
     - Previous presenting symptoms and complaints
     - Prescribed medications and treatments
     - Historical lab tests and abnormal report flags
     - Previous doctor disposition notes
     - Concise overall health background summary
     """
-    token = patient_token.strip().upper()
+    if not patient_token:
+        return {
+            "patient_token": "",
+            "is_returning_patient": False,
+            "total_visits_count": 0,
+            "previous_visits": [],
+            "cumulative_diagnoses": [],
+            "cumulative_medications": [],
+            "cumulative_lab_reports": [],
+            "previous_doctor_notes": [],
+            "overall_health_summary": "First visit. No previous clinical records on file."
+        }
+    token = str(patient_token).strip().upper()
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
 

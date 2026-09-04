@@ -4,7 +4,8 @@ export default function DocumentScannerStep({
   session,
   documents,
   onUploadDocument,
-  onProceedToSummary,
+  onNext,
+  onBack,
   isLoading
 }) {
   const [docType, setDocType] = useState('prescription')
@@ -179,15 +180,23 @@ export default function DocumentScannerStep({
         </div>
 
         {/* Step Navigation */}
-        <div className="form-actions-right" style={{ marginTop: '24px' }}>
+        <div className="kiosk-nav-row" style={{ marginTop: '24px' }}>
           <button
             type="button"
-            className="btn-kiosk-primary"
-            onClick={onProceedToSummary}
+            className="btn-kiosk-nav btn-kiosk-back"
+            onClick={onBack}
+            disabled={isLoading}
+          >
+            ← Back: Symptoms & Query
+          </button>
+          <button
+            type="button"
+            className="btn-kiosk-nav btn-kiosk-next"
+            onClick={onNext}
             disabled={isLoading}
           >
             {isLoading && <span className="btn-spinner"></span>}
-            {isLoading ? 'Processing Document...' : (documents.length === 0 ? 'Skip to Confirmation (Step 4) →' : 'Continue to Confirmation (Step 4) →')}
+            {isLoading ? 'Processing Document...' : 'Next: Review & Submit →'}
           </button>
         </div>
       </div>

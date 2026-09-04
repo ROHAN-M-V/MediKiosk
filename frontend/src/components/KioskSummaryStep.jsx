@@ -6,16 +6,21 @@ export default function KioskSummaryStep({
   socratesHpi,
   documents,
   redFlag,
+  onSubmit,
   onSubmitIntake,
   onRestartKiosk,
+  onBack,
   isLoading
 }) {
   const [isSubmitted, setIsSubmitted] = useState(
     session?.status === 'completed' || session?.status === 'urgent_triage' || session?.status === 'physician_reviewed'
   )
 
-  function handleSubmit() {
-    onSubmitIntake()
+  async function handleSubmit() {
+    const fn = onSubmit || onSubmitIntake
+    if (fn) {
+      await fn()
+    }
     setIsSubmitted(true)
   }
 
@@ -152,15 +157,23 @@ export default function KioskSummaryStep({
           </div>
         </div>
 
-        <div className="form-actions-right" style={{ marginTop: '28px' }}>
+        <div className="kiosk-nav-row" style={{ marginTop: '28px' }}>
           <button
             type="button"
-            className="btn-kiosk-primary submit-intake"
+            className="btn-kiosk-nav btn-kiosk-back"
+            onClick={onBack}
+            disabled={isLoading}
+          >
+            ← Back: Medical Records
+          </button>
+          <button
+            type="button"
+            className="btn-kiosk-nav btn-kiosk-submit"
             onClick={handleSubmit}
             disabled={isLoading}
           >
             {isLoading && <span className="btn-spinner"></span>}
-            {isLoading ? 'Submitting Check-In...' : '✓ Confirm & Get Queue Token'}
+            {isLoading ? 'Submitting Check-In...' : '✓ Submit Check-In'}
           </button>
         </div>
       </div>

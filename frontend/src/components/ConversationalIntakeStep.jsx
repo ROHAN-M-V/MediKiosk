@@ -10,14 +10,18 @@ export default function ConversationalIntakeStep({
   redFlag,
   suggestedChips,
   onSendMessage,
-  onProceedToDocs,
+  onNext,
+  onBack,
   isLoading
 }) {
   const [inputText, setInputText] = useState('')
-  const [isListening, setIsListening] = useState(false)
+  const [voiceState, setVoiceState] = useState('idle') // 'idle' | 'listening' | 'processing' | 'success' | 'error'
+  const [voiceError, setVoiceError] = useState('')
+  const [interimSpeech, setInterimSpeech] = useState('')
   const [showMobileSidebar, setShowMobileSidebar] = useState(false)
   const [isLiveVoiceOpen, setIsLiveVoiceOpen] = useState(false)
   const bottomRef = useRef(null)
+  const recognitionRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -37,32 +41,97 @@ export default function ConversationalIntakeStep({
     }
   }
 
-  // Dual-Language (English & Hindi) Speech-to-Text
-  function toggleVoiceInput() {
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      alert('Speech Recognition is not supported in this browser. Please type your message.')
+  // Multi-State Speech-to-Text with clear UI feedback
+  function startVoiceRecording() {
+    if (voiceState === 'listening') {
+      stopVoiceRecording()
       return
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    const recognition = new SpeechRecognition()
-    recognition.lang = session?.language === 'hi' ? 'hi-IN' : 'en-IN'
-    recognition.interimResults = false
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      setVoiceState('error')
+      setVoiceError('Speech recognition is not supported in this browser. Please type your message.')
+      return
+    }
 
-    if (!isListening) {
-      setIsListening(true)
-      recognition.start()
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript
-        setInputText(prev => (prev ? `${prev} ${transcript}` : transcript))
-        setIsListening(false)
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      const recognition = new SpeechRecognition()
+      recognition.lang = session?.language === 'hi' ? 'hi-IN' : 'en-IN'
+      recognition.interimResults = true
+      recognition.continuous = false
+
+      recognition.onstart = () => {
+        setVoiceState('listening')
+        setVoiceError('')
+        setInterimSpeech('')
       }
-      recognition.onerror = () => setIsListening(false)
-      recognition.onend = () => setIsListening(false)
-    } else {
-      setIsListening(false)
+
+      recognition.onresult = (event) => {
+        let interim = ''
+        let final = ''
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            final += text
+          } else {
+            interim += text
+          }
+        }
+        const text = (final || interim).trim()
+        setInterimSpeech(text)
+      }
+
+      recognition.onerror = (event) => {
+        console.warn('Voice recognition error:', event.error)
+        if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+          setVoiceError('Microphone permission denied. Please allow microphone access in your browser settings.')
+        } else if (event.error === 'no-speech') {
+          setVoiceError('No speech detected. Please tap Speak and try again.')
+        } else {
+          setVoiceError(`Voice error: ${event.error}. You can type your message below.`)
+        }
+        setVoiceState('error')
+      }
+
+      recognition.onend = () => {
+        setVoiceState(prev => (prev === 'listening' ? 'processing' : prev))
+      }
+
+      recognitionRef.current = recognition
+      recognition.start()
+    } catch (err) {
+      console.error('Failed to start voice recognition:', err)
+      setVoiceState('error')
+      setVoiceError('Could not start microphone. Please ensure permissions are granted.')
     }
   }
+
+  function stopVoiceRecording() {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch (e) {}
+    }
+    setVoiceState('processing')
+  }
+
+  useEffect(() => {
+    if (voiceState === 'processing') {
+      const speech = interimSpeech.trim()
+      if (speech) {
+        setInputText(prev => (prev ? `${prev} ${speech}` : speech))
+        setVoiceState('success')
+        const timer = setTimeout(() => {
+          setVoiceState('idle')
+          setInterimSpeech('')
+        }, 1800)
+        return () => clearTimeout(timer)
+      } else {
+        setVoiceState('idle')
+      }
+    }
+  }, [voiceState, interimSpeech])
 
   return (
     <div className="intake-layout">
@@ -157,15 +226,56 @@ export default function ConversationalIntakeStep({
           </div>
         )}
 
+        {/* Voice Recording Status Live Banner */}
+        {voiceState === 'listening' && (
+          <div className="voice-active-status-bar">
+            <div className="voice-pulse-indicator">
+              <span className="voice-dot"></span>
+              <span className="voice-text">Listening... Speak now</span>
+            </div>
+            {interimSpeech && <div className="voice-live-transcript">"{interimSpeech}"</div>}
+            <button type="button" className="btn-voice-stop" onClick={stopVoiceRecording}>
+              Done Speaking ✓
+            </button>
+          </div>
+        )}
+
+        {voiceState === 'processing' && (
+          <div className="voice-processing-status-bar">
+            <span className="btn-spinner"></span>
+            <span>Converting speech to text...</span>
+          </div>
+        )}
+
+        {voiceState === 'success' && (
+          <div className="voice-success-status-bar">
+            ✓ Message added to input box!
+          </div>
+        )}
+
+        {voiceState === 'error' && (
+          <div className="voice-error-status-bar">
+            <span>⚠️ {voiceError}</span>
+            <button type="button" className="btn-dismiss-voice-err" onClick={() => setVoiceState('idle')}>✕</button>
+          </div>
+        )}
+
         {/* Input Bar with Voice & Send */}
         <div className="intake-input-bar">
           <button
             type="button"
-            className={`btn-voice-record ${isListening ? 'listening' : ''}`}
-            onClick={toggleVoiceInput}
-            title="Speak your symptoms"
+            className={`btn-voice-record state-${voiceState}`}
+            onClick={startVoiceRecording}
+            disabled={isLoading || voiceState === 'processing'}
+            title={voiceState === 'listening' ? 'Tap to finish speaking' : 'Tap to speak your symptoms'}
           >
-            {isListening ? 'Listening...' : '🎤 Speak'}
+            {voiceState === 'listening' ? (
+              <>🔴 Stop</>
+            ) : voiceState === 'processing' ? (
+              <><span className="btn-spinner"></span> Converting</>
+            ) : (
+              <>🎙️ Speak</>
+            )}
           </button>
 
           <textarea
@@ -188,13 +298,23 @@ export default function ConversationalIntakeStep({
           </button>
         </div>
 
-        {/* Bottom Stage Action */}
-        <div className="intake-footer-action">
-          <p className="kiosk-hint">
-            Done answering? You can upload past prescriptions or test reports next.
-          </p>
-          <button type="button" className="btn-kiosk-primary" onClick={onProceedToDocs} disabled={isLoading}>
-            Continue to Document Upload (Step 3) →
+        {/* Standardized 4-Step Navigation */}
+        <div className="kiosk-nav-row" style={{ marginTop: '16px' }}>
+          <button
+            type="button"
+            className="btn-kiosk-nav btn-kiosk-back"
+            onClick={onBack}
+            disabled={isLoading}
+          >
+            ← Back: Patient Information
+          </button>
+          <button
+            type="button"
+            className="btn-kiosk-nav btn-kiosk-next"
+            onClick={onNext}
+            disabled={isLoading}
+          >
+            Next: Medical Records →
           </button>
         </div>
       </div>

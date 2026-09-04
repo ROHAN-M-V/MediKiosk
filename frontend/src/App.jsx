@@ -52,6 +52,15 @@ export default function App() {
   const [patientToken, setPatientToken] = useState(() => savedPatient?.patientToken || '')
   const [verifiedPatientData, setVerifiedPatientData] = useState(() => savedPatient?.verifiedPatientData || null)
   const [selectedDoctor, setSelectedDoctor] = useState(() => savedPatient?.selectedDoctor || null)
+  const [patientFormData, setPatientFormData] = useState(() => savedPatient?.patientFormData || {
+    name: savedPatient?.verifiedPatientData?.name || '',
+    age: savedPatient?.verifiedPatientData?.age ? String(savedPatient.verifiedPatientData.age) : '',
+    gender: savedPatient?.verifiedPatientData?.gender || 'Male',
+    phone: savedPatient?.verifiedPatientData?.phone || '',
+    abha_id: savedPatient?.verifiedPatientData?.abha_id || '',
+    department: 'allopathic',
+    consent: { store_data: true, ai_triage: true, share_with_doctor: true }
+  })
   const [currentStep, setCurrentStep] = useState(() => savedPatient?.currentStep || 1) // 1: Identity, 2: Chat, 3: Docs, 4: Summary
   const [language, setLanguage] = useState(() => savedPatient?.language || 'en')
   const [isLoading, setIsLoading] = useState(false)
@@ -71,6 +80,7 @@ export default function App() {
         patientToken,
         verifiedPatientData,
         selectedDoctor,
+        patientFormData,
         currentStep,
         language,
         session,
@@ -89,6 +99,7 @@ export default function App() {
     patientToken,
     verifiedPatientData,
     selectedDoctor,
+    patientFormData,
     currentStep,
     language,
     session,
@@ -394,6 +405,14 @@ export default function App() {
   function handlePatientVerified(patientPayload) {
     setPatientToken(patientPayload.token)
     setVerifiedPatientData(patientPayload)
+    setPatientFormData(prev => ({
+      ...prev,
+      name: patientPayload.name || prev.name,
+      age: patientPayload.age ? String(patientPayload.age) : prev.age,
+      gender: patientPayload.gender || prev.gender,
+      phone: patientPayload.phone || prev.phone,
+      abha_id: patientPayload.abha_id || prev.abha_id
+    }))
     setAppMode('patient_doctor_select')
   }
 
@@ -403,14 +422,31 @@ export default function App() {
     setAppMode('patient_intake')
   }
 
-  async function handleStartIntake(patientFormData) {
+  async function handleStartIntake(incomingFormData) {
+    const updatedFormData = { ...patientFormData, ...incomingFormData }
+    setPatientFormData(updatedFormData)
+
+    // If session already exists, smoothly proceed to Step 2 without wiping the conversation!
+    if (session) {
+      setPatient(prev => ({
+        ...prev,
+        name: updatedFormData.name,
+        age: parseInt(updatedFormData.age, 10),
+        gender: updatedFormData.gender,
+        phone: updatedFormData.phone,
+        abha_id: updatedFormData.abha_id
+      }))
+      setCurrentStep(2)
+      return
+    }
+
     setIsLoading(true)
     try {
       const res = await fetch(`${API_URL}/intake/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...patientFormData,
+          ...updatedFormData,
           patient_token: patientToken,
           language,
           assigned_doctor_id: selectedDoctor?.id || null,
@@ -543,6 +579,15 @@ export default function App() {
     setPatientToken('')
     setVerifiedPatientData(null)
     setSelectedDoctor(null)
+    setPatientFormData({
+      name: '',
+      age: '',
+      gender: 'Male',
+      phone: '',
+      abha_id: '',
+      department: 'allopathic',
+      consent: { store_data: true, ai_triage: true, share_with_doctor: true }
+    })
     setSuggestedChips([])
     setCurrentStep(1)
     setAppMode('entry')
@@ -680,9 +725,10 @@ export default function App() {
             patientToken={patientToken}
             initialPatientData={verifiedPatientData}
             selectedDoctor={selectedDoctor}
-            onStartIntake={handleStartIntake}
-            onBackToTokenEntry={() => setAppMode('patient_doctor_select')}
-            onRestartKiosk={handleRestartKiosk}
+            formData={patientFormData}
+            onFormDataChange={setPatientFormData}
+            onNext={handleStartIntake}
+            onBack={() => setAppMode('patient_doctor_select')}
             hasSession={Boolean(session)}
             loading={isLoading}
           />
@@ -697,7 +743,7 @@ export default function App() {
             redFlag={redFlag}
             suggestedChips={suggestedChips}
             onSendMessage={handleSendMessage}
-            onProceedToDocs={() => setCurrentStep(3)}
+            onNext={() => setCurrentStep(3)}
             onBack={() => setCurrentStep(1)}
             isLoading={isLoading}
           />
@@ -708,7 +754,7 @@ export default function App() {
             session={session}
             documents={documents}
             onUploadDocument={handleUploadDocument}
-            onProceedToSummary={() => setCurrentStep(4)}
+            onNext={() => setCurrentStep(4)}
             onBack={() => setCurrentStep(2)}
             isLoading={isLoading}
           />
@@ -721,10 +767,9 @@ export default function App() {
             socratesHpi={socratesHpi}
             documents={documents}
             redFlag={redFlag}
-            onSubmitIntake={handleSubmitIntake}
+            onSubmit={handleSubmitIntake}
             onRestartKiosk={handleRestartKiosk}
             onBack={() => setCurrentStep(3)}
-            onBackToChat={() => setCurrentStep(2)}
             isLoading={isLoading}
           />
         )}

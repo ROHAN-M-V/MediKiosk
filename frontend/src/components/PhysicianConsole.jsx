@@ -239,6 +239,7 @@ export default function PhysicianConsole({
       prev.map(p => (p.id === id ? { ...p, [field]: val } : p))
     )
   }
+  const updatePrescription = updatePrescriptionField
 
   // Longitudinal history helpers
   const token = session?.patient_token || patient?.patient_token

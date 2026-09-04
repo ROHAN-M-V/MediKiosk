@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import aiosqlite
 from database import (
     init_db, generate_secure_patient_token, lookup_patient_by_token,
     get_or_create_patient_by_token, get_patient,
@@ -25,7 +26,7 @@ from database import (
     get_token_security_alerts, get_patient_complete_medical_history,
     update_patient_master_health_record,
     get_doctor_by_email, get_doctor_by_id, create_doctor,
-    update_doctor_profile, list_available_doctors
+    update_doctor_profile, list_available_doctors, DB_PATH
 )
 from agent import (
     run_intake_conversation, analyze_medical_document,
@@ -655,8 +656,8 @@ async def get_physician_queue(
     department: Optional[str] = Query(None),
     doctor: Dict[str, str] = Depends(require_doctor_role)
 ):
-    """Fetch live patient queue with priority triage and security alerts (Strictly Doctor Protected)."""
-    queue = await list_physician_queue(department=department)
+    """Fetch live patient queue with priority triage and security alerts (Strict Doctor Authorization)."""
+    queue = await list_physician_queue(department=department, doctor_id=doctor["user_id"])
     return {"queue": queue}
 
 
@@ -669,6 +670,14 @@ async def get_physician_session_detail(
     session = await get_intake_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Strict Doctor-Patient Access Control: Only the assigned doctor can access this OPD record
+    assigned_doc_id = session.get("assigned_doctor_id") or ""
+    if assigned_doc_id != doctor["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: You are not authorized to view this patient's records."
+        )
 
     patient_token = session.get("patient_token", "")
     patient = await get_patient(session["patient_id"])
@@ -712,6 +721,18 @@ async def get_physician_patient_history(
     doctor: Dict[str, str] = Depends(require_doctor_role)
 ):
     """Fetch complete historical consultations, diagnoses, and lab tests for a patient token (Strictly Doctor Protected)."""
+    # Strict Doctor-Patient Access Control: Verify doctor has at least one assigned OPD record for this patient
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM intake_sessions WHERE patient_token = ? AND assigned_doctor_id = ?",
+            (patient_token.strip().upper(), doctor["user_id"])
+        )
+        count = (await cursor.fetchone())[0]
+        if count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access Denied: You have no assigned OPD records for this patient."
+            )
     history = await get_patient_complete_medical_history(patient_token=patient_token)
     return {"patient_history": history}
 
@@ -725,6 +746,14 @@ async def confirm_physician_summary(
     session = await get_intake_session(data.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Strict Doctor-Patient Access Control: Only the assigned doctor can verify this session
+    assigned_doc_id = session.get("assigned_doctor_id") or ""
+    if assigned_doc_id != doctor["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: You are not authorized to verify this patient session."
+        )
 
     patient = await get_patient(session["patient_id"])
     documents = await get_session_documents(data.session_id)
@@ -763,7 +792,7 @@ async def confirm_physician_summary(
         status=status_val
     )
 
-    # Automatically update the patient's master record with physician disposition notes
+    # Automatically update the patient's master health record with physician disposition notes
     if session.get("patient_id"):
         combined_note = f"Diagnosis: {data.diagnosis}. Prescriptions: {data.prescriptions}. Notes: {data.disposition_notes}"
         await update_patient_master_health_record(
@@ -808,6 +837,14 @@ async def update_physician_session_status(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Strict Doctor-Patient Access Control
+    assigned_doc_id = session.get("assigned_doctor_id") or ""
+    if assigned_doc_id != doctor["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: You are not authorized to update this patient session."
+        )
+
     updated = await update_intake_session(
         data.session_id,
         status=data.status
@@ -833,6 +870,14 @@ async def get_or_generate_session_fhir(
     session = await get_intake_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Strict Doctor-Patient Access Control
+    assigned_doc_id = session.get("assigned_doctor_id") or ""
+    if assigned_doc_id != doctor["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: You are not authorized to access FHIR records for this patient session."
+        )
 
     # If bundle already generated and stored, return it
     bundle = session.get("fhir_bundle")
