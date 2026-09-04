@@ -1,6 +1,6 @@
-> 🌐 **Live Demo**: [frontend-delta-ecru.vercel.app](https://frontend-delta-ecru.vercel.app/)
-
 # MediKiosk — AI-Powered Clinical Intake & Triage Platform
+
+> 🌐 **Live Demo**: [frontend-delta-ecru.vercel.app](https://frontend-delta-ecru.vercel.app/)
 
 **MediKiosk** is a clinical-grade outpatient intake, triage, and medical documentation platform designed for hospitals and clinics. Built with a **Bank/ATM kiosk design philosophy** and modern responsive ergonomics, it bridges the gap between patient walk-in arrival and the doctor's consultation room. It guides patients through an intelligent conversational interview (following the clinical SOCRATES framework), extracts data from prior prescriptions and lab reports via multi-modal OCR, detects emergency red-flag symptoms, and compiles structured clinical summaries and longitudinal records for attending physicians.
 
