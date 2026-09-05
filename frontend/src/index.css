@@ -1358,6 +1358,8 @@ button {
   border-radius: var(--radius-md);
   font-size: 14.5px;
   line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .intake-bubble-row.assistant .bubble-text {

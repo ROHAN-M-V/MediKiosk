@@ -353,10 +353,13 @@ async def list_physician_queue(
         conditions = []
         params = []
         
-        if doctor_id:
+        if doctor_id and doctor_id.strip():
             # Strict doctor-patient access control: return only sessions assigned to this specific doctor
             conditions.append("s.assigned_doctor_id = ?")
-            params.append(doctor_id)
+            params.append(doctor_id.strip())
+        else:
+            # Fail closed: unauthorized or missing doctor_id returns zero records
+            conditions.append("1 = 0")
             
         if department:
             conditions.append("s.department = ?")

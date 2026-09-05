@@ -20,18 +20,50 @@ export default function ConversationalIntakeStep({
   const [interimSpeech, setInterimSpeech] = useState('')
   const [showMobileSidebar, setShowMobileSidebar] = useState(false)
   const [isLiveVoiceOpen, setIsLiveVoiceOpen] = useState(false)
+  const [validationError, setValidationError] = useState('')
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
+  const textareaRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
+
+  function handleInputChange(e) {
+    setInputText(e.target.value)
+    if (validationError) setValidationError('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
+    }
+  }
 
   function handleSend(textToSend) {
     const text = textToSend || inputText
     if (!text.trim() || isLoading) return
     onSendMessage(text)
     setInputText('')
+    if (validationError) setValidationError('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
+  }
+
+  function handleNextStep() {
+    const hasUserMsg = Array.isArray(messages) && messages.some(m => m.role === 'user')
+    const hasPendingInput = inputText.trim().length > 0
+
+    if (!hasUserMsg && !hasPendingInput) {
+      setValidationError('Please share at least one message describing your symptoms before proceeding.')
+      return
+    }
+
+    if (hasPendingInput) {
+      handleSend()
+    }
+
+    setValidationError('')
+    onNext()
   }
 
   function handleKeyDown(e) {
@@ -43,6 +75,10 @@ export default function ConversationalIntakeStep({
 
   // Multi-State Speech-to-Text with clear UI feedback
   function startVoiceRecording() {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur()
+    }
+
     if (voiceState === 'listening') {
       stopVoiceRecording()
       return
@@ -279,8 +315,9 @@ export default function ConversationalIntakeStep({
           </button>
 
           <textarea
+            ref={textareaRef}
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder="Type your response here..."
             rows={1}
@@ -298,6 +335,12 @@ export default function ConversationalIntakeStep({
           </button>
         </div>
 
+        {validationError && (
+          <div className="kiosk-validation-alert" style={{ margin: '14px 0 0', padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', fontSize: '13.5px', fontWeight: 600 }}>
+            ⚠️ {validationError}
+          </div>
+        )}
+
         {/* Standardized 4-Step Navigation */}
         <div className="kiosk-nav-row" style={{ marginTop: '16px' }}>
           <button
@@ -311,7 +354,7 @@ export default function ConversationalIntakeStep({
           <button
             type="button"
             className="btn-kiosk-nav btn-kiosk-next"
-            onClick={onNext}
+            onClick={handleNextStep}
             disabled={isLoading}
           >
             Next: Medical Records →
